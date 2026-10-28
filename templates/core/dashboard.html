@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Workshop</p>
+  <h1>Dashboard</h1>
+  <p class="lede">What changed, what waits for a decision, and what the workers are doing.</p>
+</header>
+
+<section class="stats" aria-label="Summary">
+  <a class="stat" href="{% url 'library' %}"><strong>{{ article_count }}</strong><span>Articles</span></a>
+  <a class="stat" href="{% url 'library' %}?status=published"><strong>{{ published_count }}</strong><span>Published</span></a>
+  <a class="stat" href="{% url 'proposals' %}?status=open"><strong>{{ pending_count }}</strong><span>Open proposals</span></a>
+  <a class="stat" href="{% url 'jobs' %}?status=running"><strong>{{ active_jobs|length }}</strong><span>Active jobs (recent)</span></a>
+</section>
+
+{% if user.is_authenticated %}
+<section class="action-row" aria-label="Quick actions">
+  <a class="btn btn-primary" href="{% url 'article_new' %}">+ New article</a>
+  {% if user.is_staff %}<a class="btn" href="{% url 'workshop' %}">Start a job in the workshop</a>{% endif %}
+  <a class="btn btn-quiet" href="{% url 'evals' %}">Test cases</a>
+</section>
+{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Pending proposals</h2>
+    {% for p in pending %}
+      <div class="row-item">
+        <div>
+          <a href="{% url 'proposal' p.pk %}">{{ p.article.title }}</a>
+          <span class="muted">· against {{ p.base.label|default:"new article" }}</span>
+          <div>
+            <span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span>
+            <span class="badge badge-{{ p.origin }}">{{ p.get_origin_display }}</span>
+            {% if p.is_stale %}<span class="badge badge-stale">Stale</span>{% endif %}
+          </div>
+        </div>
+      </div>
+    {% empty %}
+      <div class="empty-inline">Nothing waiting. Propose an edit from any article's editor to start one.</div>
+    {% endfor %}
+    <a class="card-link" href="{% url 'proposals' %}">All proposals →</a>
+  </section>
+
+  <section class="card">
+    <h2>Jobs</h2>
+    {% for j in active_jobs %}
+      <div class="row-item">
+        <div><a href="{% url 'job_detail' j.pk %}">{{ j.label|truncatechars:70 }}</a>
+          <div><span class="badge badge-{{ j.status }}">{{ j.get_status_display }}</span>
+          <span class="badge badge-{{ j.runner }}">{{ j.runner|upper }}</span></div></div>
+      </div>
+    {% endfor %}
+    {% for j in failed_jobs %}
+      <div class="row-item">
+        <div><a href="{% url 'job_detail' j.pk %}">{{ j.label|truncatechars:70 }}</a>
+          <div><span class="badge badge-{{ j.status }}">{{ j.get_status_display }}</span></div>
+          <p class="error-snip">{{ j.error|truncatechars:140 }}</p></div>
+      </div>
+    {% endfor %}
+    {% if not active_jobs and not failed_jobs %}<div class="empty-inline">No jobs yet. Start one from the workshop.</div>{% endif %}
+    <a class="card-link" href="{% url 'jobs' %}">All jobs →</a>
+  </section>
+</div>
+
+<section class="card">
+  <h2>Recent changes</h2>
+  <table class="data">
+    <thead><tr><th>When</th><th>Article</th><th>Action</th><th>Who</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for e in recent %}
+      <tr>
+        <td>{{ e.created_at|date:"j M H:i" }}</td>
+        <td><a href="{% url 'article' e.article.slug %}">{{ e.article.title }}</a>{% if e.revision %} <span class="muted">{{ e.revision.label }}</span>{% endif %}</td>
+        <td>{{ e.action|cut:"_"|capfirst }}</td>
+        <td>{{ e.actor.username|default:"system" }}</td>
+        <td class="reason-cell">{{ e.reason|truncatechars:90 }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty-inline">No changes recorded yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Recently updated articles</h2>
+  <ul class="plain-list">
+    {% for a in recent_articles %}
+      <li><a href="{% url 'article' a.slug %}">{{ a.title }}</a> <span class="muted">{{ a.updated_at|date:"j M H:i" }}</span></li>
+    {% empty %}<li class="empty-inline">None yet.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

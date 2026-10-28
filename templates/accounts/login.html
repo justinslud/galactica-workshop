@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Log in · Galactica Workshop{% endblock %}
+{% block content %}
+<div class="account-panel">
+  <p class="eyebrow">ACCOUNT</p>
+  <h1>Log in</h1>
+  <form method="post" action="">
+    {% csrf_token %}
+    <div class="form-field">
+      <label for="id_username">Username</label>
+      <input id="id_username" name="username" type="text" required>
+    </div>
+    <div class="form-field">
+      <label for="id_password">Password</label>
+      <input id="id_password" name="password" type="password" required>
+    </div>
+    <button type="submit" class="primary-action">Log in</button>
+  </form>
+  <p class="helper" style="margin-top:12px;">Default admin: <strong>admin</strong> / <strong>admin</strong></p>
+</div>
+{% endblock %}

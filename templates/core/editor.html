@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}Edit · {{ article.title }}{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow"><a href="{% url 'article' article.slug %}">{{ article.title }}</a> · editor</p>
+  <h1>Draft r{{ draft.number }}</h1>
+  <p class="lede">Base: {% if article.published %}published {{ article.published.label }}{% else %}none (first revision of a new article){% endif %}. Saving never publishes. Submitting creates a proposal that a staff member decides on.</p>
+</header>
+
+{% if last_submitted %}
+<div class="banner banner-info">Last proposal from this article: <a href="{% url 'proposal' last_submitted.pk %}">{{ last_submitted.id|slice:":8" }}</a>
+  <span class="badge badge-{{ last_submitted.status }}">{{ last_submitted.get_status_display }}</span>.
+  {% if last_submitted.is_stale %}It was written against an older revision and can no longer be published.{% endif %}</div>
+{% endif %}
+
+<noscript><div class="banner banner-warn">The block editor needs JavaScript. Reading, history, proposals and the workshop work without it. Your existing draft is not shown here, and nothing was changed.</div></noscript>
+<form id="editor-form" method="post" action="{% url 'editor_save' article.slug %}" data-preview-url="{% url 'editor_preview' article.slug %}">
+  {% csrf_token %}
+  <input type="hidden" name="payload" id="payload">
+
+  <div class="editor-toolbar" role="toolbar" aria-label="Save and submit">
+    <span id="save-state" class="save-state clean" aria-live="polite">All changes saved</span>
+    <span class="spacer"></span>
+    <button class="btn" type="submit" name="action" value="save" id="save-btn">Save draft</button>
+    <a class="btn btn-quiet" href="#preview-anchor">Preview</a>
+    <button class="btn btn-primary" type="submit" name="action" value="submit" id="submit-btn">Submit proposal</button>
+  </div>
+
+  <div class="editor-layout">
+    <section class="editor-pane" aria-label="Article content">
+      <div class="field">
+        <label for="ed-title">Title</label>
+        <input id="ed-title" type="text" maxlength="200" required>
+      </div>
+      <div class="field">
+        <label for="ed-opening">Short opening <span class="muted">(max 600 characters)</span></label>
+        <textarea id="ed-opening" rows="3" maxlength="600"></textarea>
+      </div>
+
+      <h2 class="section-h">Blocks</h2>
+      <p class="help">Order matters: blocks render top to bottom. Each block keeps a stable id, so evidence and proposals can point at it.</p>
+      <div id="blocks" class="blocks"></div>
+
+      <div class="add-block" role="group" aria-label="Add a block">
+        <span class="muted">Add block</span>
+        <button type="button" class="btn btn-small" data-add="markdown">Text</button>
+        <button type="button" class="btn btn-small" data-add="image">Image</button>
+        <button type="button" class="btn btn-small" data-add="table">Table</button>
+        <button type="button" class="btn btn-small" data-add="timeline">Timeline</button>
+      </div>
+
+      <div class="field rationale-field">
+        <label for="rationale">Rationale for the proposal</label>
+        <textarea id="rationale" name="rationale" rows="3" placeholder="Why does this change help a reader? Name the source it rests on."></textarea>
+        <p class="help">Required only when submitting (20 to 2000 characters). Saving does not need it.</p>
+      </div>
+    </section>
+
+    <aside class="preview-pane" id="preview-anchor" aria-label="Live preview">
+      <div class="preview-head">Live preview <span class="muted">· same renderer as the article page</span></div>
+      <div id="preview-errors" class="field-error" role="alert"></div>
+      <div id="preview-body" class="preview-body"></div>
+    </aside>
+  </div>
+</form>
+
+{{ payload|json_script:"initial-payload" }}
+{{ sources|json_script:"sources-data" }}
+<script src="{% static 'js/editor.js' %}" defer></script>
+{% endblock %}

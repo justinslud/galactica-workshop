@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% block title %}Test cases{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Editorial tests</p>
+  <h1>Test cases and runs</h1>
+  <p class="lede">Each case is a repeatable proposal scenario. Compare runs to see individual outcomes, not just a score. Expectations marked simulated are not human labels.</p>
+</header>
+
+{% if not runs %}
+<div class="empty-state"><h2>No test runs yet</h2><p>Queue a run from the workshop. It will run through the proposal and review machinery.</p>
+{% if user.is_staff %}<a class="btn btn-primary" href="{% url 'workshop' %}">Open workshop</a>{% endif %}</div>
+{% endif %}
+
+<div class="table-scroll">
+<table class="data matrix">
+  <thead>
+    <tr>
+      <th>Case</th><th>Expected</th>
+      {% for run in runs %}<th><a href="{% url 'job_detail' run.pk %}">{{ run.created_at|date:"j M H:i" }}</a><br><span class="badge badge-{{ run.status }}">{{ run.get_status_display }}</span><br><span class="badge badge-{{ run.runner }}">{{ run.runner|upper }}</span></th>{% endfor %}
+    </tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr>
+      <td><strong>{{ row.case.name }}</strong><br><span class="muted small">{{ row.case.get_category_display }} · {{ row.case.article.title }}</span></td>
+      <td>{{ row.case.get_expected_display|truncatechars:30 }}<br><span class="badge badge-{{ row.case.label_source }}">{{ row.case.get_label_source_display }}</span></td>
+      {% for cell in row.cells %}
+        <td>
+          {% for r in cell.results %}
+            <div class="cell-result">
+              <span class="badge badge-{{ r.outcome }}">{{ r.outcome }}</span>
+              {% if r.matches == True %}<span class="badge badge-succeeded">match</span>{% elif r.matches == False %}<span class="badge badge-failed">mismatch</span>{% endif %}
+              <span class="small muted">cand {{ r.candidate_label }}</span>
+              <details class="detail"><summary>Verdicts</summary>
+                <ul class="verdicts">{% for role, verdict in r.verdicts.items %}<li>{{ role }}: <span class="badge badge-{{ verdict }}">{{ verdict }}</span></li>{% endfor %}</ul>
+                <a href="{% url 'proposal' r.proposal.pk %}">Open proposal</a>
+              </details>
+            </div>
+          {% empty %}
+            <span class="muted small">—</span>
+          {% endfor %}
+        </td>
+      {% endfor %}
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% endblock %}

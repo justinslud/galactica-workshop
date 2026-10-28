@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Edit · {{ version.name }}{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow"><a href="{% url 'workshop' %}">Workshop</a> · {{ kind_label }}</p>
+  <h1>{{ version.name }} <span class="muted">v{{ version.version }}</span></h1>
+  <p class="lede">{{ version.description }}</p>
+  <p class="status-row">{% if version.is_default %}<span class="badge badge-default">default</span>{% endif %}<span class="badge badge-provisional">Provisional until measured</span></p>
+</header>
+
+<div class="config-layout">
+  <form method="post" class="card form-stack" id="config-form">
+    {% csrf_token %}
+    <div class="field">
+      <label for="id_description">Description (what this version is for)</label>
+      <textarea id="id_description" name="description" rows="2" maxlength="2000">{{ version.description }}</textarea>
+    </div>
+    {% for field in form %}
+      <div class="field{% if field.errors %} has-error{% endif %}">
+        <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+        {{ field }}
+        {% if field.help_text %}<p class="help">{{ field.help_text }}</p>{% endif %}
+        {% for err in field.errors %}<p class="field-error">{{ err }}</p>{% endfor %}
+      </div>
+    {% endfor %}
+    <div class="action-row">
+      <button class="btn btn-primary" type="submit">Save as new version (v{{ version.version|add:1 }})</button>
+      <a class="btn btn-quiet" href="{% url 'workshop' %}">Cancel</a>
+    </div>
+    <p class="help">Saving never changes the old version. Jobs already queued keep the version they snapshot.</p>
+  </form>
+
+  <aside class="card">
+    <h2>Versions in this family</h2>
+    <ul class="plain-list">
+      {% for v in versions %}
+        <li>v{{ v.version }} · {{ v.created_at|date:"j M H:i" }}{% if v.created_by %} · {{ v.created_by.username }}{% endif %}
+          <div class="small muted">{{ v.description|truncatechars:120 }}</div></li>
+      {% endfor %}
+    </ul>
+    <p class="help">Changes to reviewer instructions alter what the reviewers judge. Record why in the description.</p>
+  </aside>
+</div>
+{% endblock %}

@@ -1,0 +1,207 @@
+{% extends 'base.html' %}
+{% block title %}Proposal · {{ proposal.article.title }}{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow"><a href="{% url 'article' proposal.article.slug %}">{{ proposal.article.title }}</a> · proposal {{ proposal.id|slice:":8" }}</p>
+  <h1>{{ proposal.candidate.label }} against {{ proposal.base.label|default:"a new article" }}</h1>
+  <p class="status-row">
+    <span class="badge badge-{{ proposal.status }}">{{ proposal.get_status_display }}</span>
+    <span class="badge badge-{{ proposal.origin }}">{{ proposal.get_origin_display }}</span>
+    {% if proposal.is_stale %}<span class="badge badge-stale">Stale</span>{% endif %}
+    {% if proposal.repeat_of %}<span class="badge badge-warn">Repeats rejected <a href="{% url 'proposal' proposal.repeat_of.pk %}">proposal {{ proposal.repeat_of.id|slice:":8" }}</a></span>{% endif %}
+  </p>
+</header>
+
+{% if proposal.origin == 'simulated' or proposal.origin == 'evaluation' %}
+<div class="banner banner-sim"><strong>SIMULATED.</strong> Reviews and edits on this page come from the offline simulated runner. Heuristic judgements, not research.</div>
+{% endif %}
+{% if proposal.origin == 'agent' %}
+<div class="banner banner-agent"><strong>Agent-produced.</strong> This proposal came from one bounded agent cycle. The agent is <strong>{{ proposal.agent.name|default:"unknown" }}</strong>, operator <strong>{{ proposal.created_by.username|default:"unknown" }}</strong>, writer model <code>{{ proposal.origin_model|default:"not recorded" }}</code>{% if proposal.origin_job %}, job <a href="{% url 'job_detail' proposal.origin_job.pk %}">{{ proposal.origin_job.id|slice:":8" }}</a>{% endif %}. It stays pending for human inspection.</div>
+{% endif %}
+{% if proposal.origin == 'evaluation' %}
+<div class="banner banner-info">Test-case proposal. It exists to measure the review panel and can never be approved or published.</div>
+{% endif %}
+
+{% if proposal.is_stale %}
+<div class="banner banner-warn stale-warning" role="alert">
+  <strong>This proposal is stale.</strong> It was written against {{ proposal.base.label|default:"no revision" }}, but
+  {{ proposal.article.title }} is now at {{ proposal.article.published.label }}. Publishing it is refused. Open a new draft from the current revision if the change still matters.
+</div>
+{% endif %}
+
+<div class="proposal-grid">
+  <section class="card">
+    <h2>Rationale</h2>
+    <p class="rationale">{{ proposal.rationale }}</p>
+    <dl class="meta-list">
+      <dt>Submitted</dt><dd>{{ proposal.created_at|date:"j M Y H:i" }} by {{ proposal.created_by.username|default:"runner" }}</dd>
+      <dt>Base</dt><dd>{{ proposal.base.label|default:"none" }}{% if proposal.base %} (<a href="{% url 'article' proposal.article.slug %}?rev={{ proposal.base.number }}">view</a>){% endif %}</dd>
+      <dt>Candidate</dt><dd>{{ proposal.candidate.label }}</dd>
+      {% if proposal.decided_at %}<dt>Decision</dt><dd>{{ proposal.get_status_display }} by {{ proposal.decided_by.username|default:"system" }}, {{ proposal.decided_at|date:"j M H:i" }}<br><span class="muted">{{ proposal.decision_note }}</span></dd>{% endif %}
+      {% if proposal.result %}<dt>Result</dt><dd><a href="{% url 'article' proposal.article.slug %}?rev={{ proposal.result.number }}">{{ proposal.result.label }}</a></dd>{% endif %}
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Review judgments <span class="badge badge-{{ outcome }}">{{ outcome }}</span></h2>
+    <p class="help">Each reviewer saw only the base, the candidate, the rationale and the sources, in a fresh session. No reviewer saw another's verdict. Panel outcome is a summary, not a decision. Policy: {{ policy.min_reviews }} reviews minimum; objections {% if policy.block_on_objection %}block approval{% else %}do not block{% endif %}.</p>
+    {% for row in reviews %}
+      <div class="review-card verdict-{{ row.review.verdict }}">
+        <div class="review-head">
+          <strong>{{ row.label }}</strong>
+          <span class="badge badge-{{ row.review.verdict }}">{{ row.review.get_verdict_display }}</span>
+          <span class="badge badge-{{ row.review.origin }}">{{ row.review.origin|upper }}</span>
+        </div>
+        <p>{{ row.review.comment }}</p>
+        {% if row.review.evidence_notes %}<p class="muted small">{{ row.review.evidence_notes }}</p>{% endif %}
+        <p class="fine">Declared model: {{ row.review.declared_model|default:"—" }} (declared by the runner, not verified identity)</p>
+      </div>
+    {% empty %}
+      <div class="empty-inline">No reviews yet. {% if user.is_staff and proposal.status == 'pending' %}Run the review panel below.{% endif %}</div>
+    {% endfor %}
+  </section>
+</div>
+
+<section class="card">
+  <h2>Claim-level evidence</h2>
+  <p class="help">Stable claim IDs are what the reviewers judge. Support is computed from citation stance and strength, not from a reviewer's overall verdict.</p>
+  {% if claim_rows %}
+  <table class="data claim-table">
+    <thead><tr><th>Claim</th><th>Support</th><th>Evidence</th><th>Reviewer claim verdicts</th></tr></thead>
+    <tbody>
+    {% for row in claim_rows %}
+      <tr>
+        <td><code class="small">{{ row.claim.id|slice:":8" }}</code><br>{{ row.claim.text }}</td>
+        <td><span class="badge badge-{{ row.claim.support_status }}">{{ row.claim.get_support_status_display }}</span><br><span class="muted small">{{ row.claim.support_note }}</span></td>
+        <td>
+          {% for c in row.citations %}
+            <div class="small"><strong>{{ c.source.title|truncatechars:46 }}</strong> · {{ c.stance }} · {{ c.strength }}
+              {% if c.sha256 %}<br><code>sha256 {{ c.sha256|slice:":12" }}</code>{% endif %}
+              <div>{{ c.supports }}</div>
+              {% if c.quote %}<blockquote class="quote">{{ c.quote }}</blockquote>{% endif %}
+            </div>
+          {% empty %}<span class="field-error">No citation attached.</span>{% endfor %}
+        </td>
+        <td>
+          {% for o in row.objections %}
+            <div class="small"><strong>{{ o.review.role }}</strong> <span class="badge badge-{{ o.entry.verdict }}">{{ o.entry.verdict }}</span>
+              {% if o.entry.issue %}<span class="badge">{{ o.entry.issue }}</span>{% endif %}
+              <div>{{ o.entry.comment|default:"" }}</div></div>
+          {% empty %}<span class="muted small">No claim-level verdict.</span>{% endfor %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="empty-inline">This revision has no claim-level records yet. Run <code>manage.py backfill_claims</code> for legacy agent revisions.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Changes</h2>
+  <p class="help">Word-level diff for changed text. Red struck text was removed; green text was added.</p>
+  {% if title_diff %}<p class="title-diff"><strong>Title:</strong> {{ title_diff }}</p>{% endif %}
+  {% for d in diffs %}
+    <div class="diff-block diff-{{ d.status }}">
+      <div class="diff-head">
+        <span class="badge badge-{{ d.status }}">{{ d.status }}</span>
+        <code class="muted">{{ d.block.block_id|slice:":8" }}</code>
+        <span class="muted">{{ d.block.get_kind_display }}</span>
+      </div>
+      {% if d.status == 'changed' and d.text_diff %}
+        <div class="diff-text">{{ d.text_diff }}</div>
+      {% elif d.status == 'changed' %}
+        <div class="diff-two">
+          <div><p class="diff-label">Before</p>{{ d.before_html }}</div>
+          <div><p class="diff-label">After</p>{{ d.after_html }}</div>
+        </div>
+      {% elif d.status == 'removed' %}
+        <div class="diff-two"><div>{{ d.before_html }}</div></div>
+      {% else %}
+        <div>{{ d.after_html }}</div>
+      {% endif %}
+    </div>
+  {% empty %}
+    <p class="empty-inline">No blocks in the candidate.</p>
+  {% endfor %}
+</section>
+
+<section class="card">
+  <h2>Sources attached to the candidate</h2>
+  <ul class="plain-list">
+    {% for c in citations %}
+      <li><strong>{{ c.source.title }}</strong> <span class="muted">({{ c.source.get_check_status_display }})</span>
+        {% if c.source.url %}· <a href="{{ c.source.url }}" rel="noopener noreferrer nofollow">link</a>{% endif %}
+        <div class="supports">Supports: {{ c.supports }}</div></li>
+    {% empty %}
+      <li class="empty-inline">No sources attached to this candidate.</li>
+    {% endfor %}
+  </ul>
+</section>
+
+<section class="card decision-card">
+  <h2>Decision</h2>
+  {% if user.is_staff %}
+    {% if open_for_decision %}
+      <div class="action-row">
+        <form method="post" action="{% url 'proposal_decide' proposal.pk %}" class="inline-form">
+          {% csrf_token %}<input type="hidden" name="decision" value="approve">
+          <input name="note" placeholder="Approval note (optional)" aria-label="Approval note">
+          <button class="btn btn-primary" type="submit">Approve</button>
+        </form>
+        <form method="post" action="{% url 'proposal_decide' proposal.pk %}" class="inline-form">
+          {% csrf_token %}<input type="hidden" name="decision" value="request_revision">
+          <input name="note" required placeholder="What should the author change?" aria-label="Revision note">
+          <button class="btn" type="submit">Request revision</button>
+        </form>
+        <form method="post" action="{% url 'proposal_decide' proposal.pk %}" class="inline-form">
+          {% csrf_token %}<input type="hidden" name="decision" value="reject">
+          <input name="note" required placeholder="Reason for rejection" aria-label="Rejection reason">
+          <button class="btn btn-danger" type="submit">Reject</button>
+        </form>
+      </div>
+      <p class="help">Approval checks policy: at least {{ policy.min_reviews }} reviews, and no approval while a reviewer objects if the policy blocks it.</p>
+    {% endif %}
+    {% if proposal.status == 'approved' %}
+      {% if can_publish %}
+        <form method="post" action="{% url 'proposal_publish' proposal.pk %}" class="publish-form">
+          {% csrf_token %}
+          <p><strong>Publish {{ proposal.candidate.label }} as the new current revision.</strong> The previous revision is kept in history. Publishing rechecks the base revision.</p>
+          <button class="btn btn-primary btn-large" type="submit">Publish</button>
+        </form>
+      {% elif proposal.is_stale %}
+        <p class="error-text">Publishing refused: stale. Open a new draft from {{ proposal.article.published.label }}.</p>
+      {% endif %}
+    {% endif %}
+    {% if proposal.origin != 'evaluation' and proposal.status == 'pending' %}
+      <form method="post" action="{% url 'workshop_run' 'review' %}" class="run-panel">
+        {% csrf_token %}
+        <input type="hidden" name="proposal" value="{{ proposal.pk }}">
+        <p class="help">Runs the review panel as a background job. Current defaults: panel {{ selection_form.reviewers.initial|default:"default" }}; runner {{ selection_form.runner.initial|default:"default" }}.</p>
+        <details class="advanced"><summary>Choose a panel and runner</summary>
+          <label>Reviewer panel
+            <select name="sel_reviewers">{% for value, label in selection_form.reviewers.choices %}<option value="{{ value }}" {% if value == selection_form.reviewers.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          </label>
+          <label>Runner
+            <select name="sel_runner">{% for value, label in selection_form.runner.choices %}<option value="{{ value }}" {% if value == selection_form.runner.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+          </label>
+        </details>
+        <button class="btn" type="submit">Run review panel</button>
+      </form>
+    {% endif %}
+  {% else %}
+    <p class="muted">Decisions and publishing are staff actions. Your proposal is visible here while it waits.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Jobs for this proposal</h2>
+  <ul class="plain-list">
+    {% for j in jobs %}
+      <li><a href="{% url 'job_detail' j.pk %}">{{ j.label }}</a> <span class="badge badge-{{ j.status }}">{{ j.get_status_display }}</span> <span class="muted">{{ j.created_at|date:"j M H:i" }}</span></li>
+    {% empty %}<li class="empty-inline">No jobs yet.</li>{% endfor %}
+  </ul>
+</section>
+{% endblock %}

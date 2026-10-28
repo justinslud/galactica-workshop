@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 260" role="img" aria-labelledby="t d">
+  <title id="t">Square-root rule: same total money, different weight</title>
+  <desc id="d">Left: four donors each give 1 unit, square roots sum to 4, squared gives 16. Right: one donor gives 4 units, square root is 2, squared gives 4.</desc>
+  <rect width="640" height="260" fill="#f4f6f9"/>
+  <g font-family="system-ui, sans-serif" font-size="14" fill="#1a2332">
+    <text x="30" y="34" font-size="16" font-weight="700">Four donors, 1 unit each</text>
+    <rect x="30" y="50" width="250" height="150" rx="4" fill="#ffffff" stroke="#d4dbe5"/>
+    <circle cx="70" cy="90" r="16" fill="#1e3a5f"/><circle cx="130" cy="90" r="16" fill="#1e3a5f"/>
+    <circle cx="190" cy="90" r="16" fill="#1e3a5f"/><circle cx="250" cy="90" r="16" fill="#1e3a5f"/>
+    <text x="45" y="134">sqrt(1) = 1 each</text>
+    <text x="45" y="158">sum of roots = 4</text>
+    <text x="45" y="182" font-weight="700" fill="#1e3a5f">squared = 16</text>
+
+    <text x="350" y="34" font-size="16" font-weight="700">One donor, 4 units</text>
+    <rect x="350" y="50" width="250" height="150" rx="4" fill="#ffffff" stroke="#d4dbe5"/>
+    <circle cx="475" cy="100" r="34" fill="#2d5a8e"/>
+    <text x="365" y="134">sqrt(4) = 2</text>
+    <text x="365" y="158">sum of roots = 2</text>
+    <text x="365" y="182" font-weight="700" fill="#1e3a5f">squared = 4</text>
+  </g>
+  <text x="30" y="236" font-family="system-ui, sans-serif" font-size="12" fill="#5a6577">Illustrative drawing for a demonstration draft. Same total money (4 units); arithmetic only, not a figure from any source.</text>
+</svg>

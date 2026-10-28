@@ -1,0 +1,13 @@
+{% extends 'base.html' %}
+{% block title %}Log in{% endblock %}
+{% block content_class %}narrow{% endblock %}
+{% block content %}
+<header class="page-head"><p class="eyebrow">Accounts</p><h1>Log in</h1><p class="lede">Reading needs no account. Editing, proposing and reviewing do.</p></header>
+<form method="post" class="card form-stack">
+  {% csrf_token %}
+  {{ form.as_p }}
+  <input type="hidden" name="next" value="{{ next }}">
+  <button class="btn btn-primary" type="submit">Log in</button>
+</form>
+<p class="muted">Local demo accounts are created by <code>python manage.py seed_demo</code>. Change the passwords before any shared use.</p>
+{% endblock %}

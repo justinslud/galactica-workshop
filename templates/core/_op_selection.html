@@ -1,0 +1,14 @@
+{# Advanced selectors for one operation. Defaults are preselected; keys is a comma list of config kinds. #}
+<details class="advanced">
+  <summary>Advanced: versions and runner</summary>
+  {% if 'instructions' in keys %}
+  <label>Instructions<select name="sel_instructions">{% for value, label in selection.instructions.choices %}<option value="{{ value }}" {% if value == selection.instructions.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {% if 'reviewers' in keys %}
+  <label>Reviewer panel<select name="sel_reviewers">{% for value, label in selection.reviewers.choices %}<option value="{{ value }}" {% if value == selection.reviewers.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {% if 'runner' in keys %}
+  <label>Runner and model<select name="sel_runner">{% for value, label in selection.runner.choices %}<option value="{{ value }}" {% if value == selection.runner.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {% if 'policy' in keys %}
+  <label>Publication policy<select name="sel_policy">{% for value, label in selection.policy.choices %}<option value="{{ value }}" {% if value == selection.policy.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+  {% if 'limits' in keys %}
+  <label>Job limits<select name="sel_limits">{% for value, label in selection.limits.choices %}<option value="{{ value }}" {% if value == selection.limits.initial %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></label>{% endif %}
+</details>

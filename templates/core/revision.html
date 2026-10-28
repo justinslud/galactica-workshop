@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}Revision · {{ revision.id }}{% endblock %}
+{% block content %}
+<div class="page-title">
+  <p class="eyebrow">REVISION</p>
+  <h1>{{ revision.article.title }}</h1>
+  <p>{{ revision.created_at|date:"M j, Y H:i" }}{% if revision.created_by %} by {{ revision.created_by.username }}{% endif %}{% if revision.is_published %} · Published{% endif %}</p>
+</div>
+{% if revision.summary %}<div class="card"><h3>Summary</h3><p>{{ revision.summary }}</p></div>{% endif %}
+<div class="card">
+  <h3>Content</h3>
+  <div class="prose">{{ body|linebreaks }}</div>
+</div>
+<div class="metadata">
+  <dt>Revision ID</dt><dd>{{ revision.id }}</dd>
+  <dt>Parent</dt><dd>{% if revision.parent %}<a href="{% url 'revision_detail' revision.parent.pk %}">{{ revision.parent.id }}</a>{% else %}None (root){% endif %}</dd>
+  <dt>Published</dt><dd>{{ revision.is_published }}</dd>
+</div>
+<a class="secondary-action" href="{% url 'article' revision.article.slug %}">Back to article</a>
+{% endblock %}

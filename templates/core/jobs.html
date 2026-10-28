@@ -1,0 +1,32 @@
+{% extends 'base.html' %}
+{% block title %}Jobs{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Background work</p>
+  <h1>Jobs</h1>
+  <p class="lede">Queued, running and finished jobs. A job continues if you close the browser. Only the worker changes a running job's state.</p>
+</header>
+
+<nav class="tabs" aria-label="Job status">
+  <a href="?status=all" class="{% if status == 'all' %}active{% endif %}">All</a>
+  {% for value, label in statuses %}<a href="?status={{ value }}" class="{% if status == value %}active{% endif %}">{{ label }}</a>{% endfor %}
+</nav>
+
+<table class="data">
+  <thead><tr><th>Job</th><th>Status</th><th>Runner</th><th>Calls</th><th>Created</th><th>Result</th></tr></thead>
+  <tbody>
+  {% for j in jobs %}
+    <tr>
+      <td><a href="{% url 'job_detail' j.pk %}">{{ j.label|truncatechars:90 }}</a><br><span class="muted small">{{ j.get_kind_display }}</span></td>
+      <td><span class="badge badge-{{ j.status }}">{{ j.get_status_display }}</span></td>
+      <td><span class="badge badge-{{ j.runner }}">{{ j.runner|upper }}</span></td>
+      <td>{{ j.model_calls }}/{{ j.max_model_calls }}</td>
+      <td>{{ j.created_at|date:"j M H:i" }}</td>
+      <td class="small">{% if j.error %}<span class="error-snip">{{ j.error|truncatechars:90 }}</span>{% elif j.article %}<a href="{% url 'article' j.article.slug %}">{{ j.article.title }}</a>{% elif j.proposal %}<a href="{% url 'proposal' j.proposal.pk %}">proposal</a>{% else %}—{% endif %}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="6"><div class="empty-state"><h2>No jobs here</h2><p>Start one from the workshop.</p>{% if user.is_staff %}<a class="btn btn-primary" href="{% url 'workshop' %}">Open workshop</a>{% endif %}</div></td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

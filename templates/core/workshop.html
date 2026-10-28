@@ -1,0 +1,181 @@
+{% extends 'base.html' %}
+{% block title %}Workshop{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Control room</p>
+  <h1>Workshop</h1>
+  <p class="lede">Start research, proposals, reviews and test runs. Each run queues a background job that records the configuration it used. Closing this page does not stop anything.</p>
+</header>
+
+{% if model_error %}
+<div class="banner banner-warn"><strong>OpenCode unavailable:</strong> {{ model_error }} The SIMULATED runner and manual editing still work. Model lists are empty until OpenCode responds.</div>
+{% elif model_count %}
+<div class="banner banner-info">OpenCode catalog: {{ model_count }} models. Free models are labelled from the catalog's own cost data. The workshop never switches to a paid model on its own.</div>
+{% endif %}
+
+<section aria-labelledby="ops-h">
+  <h2 id="ops-h" class="section-h">Run an operation</h2>
+  <div class="ops-grid">
+
+    <form class="op-card" method="post" action="{% url 'workshop_run' 'research' %}">
+      {% csrf_token %}
+      <h3>Research and draft</h3>
+      <p class="help">Creates a new article with an open draft. With the SIMULATED runner it is a placeholder skeleton, labelled as such.</p>
+      <label>Topic<input name="topic" required maxlength="200" placeholder="e.g. Asimov's Encyclopedia Galactica"></label>
+      <label>Notes for the drafter<textarea name="notes" rows="2" maxlength="2000"></textarea></label>
+      {% include 'core/_op_selection.html' with keys='instructions,runner,limits,policy' %}
+      <button class="btn btn-primary" type="submit">Queue research job</button>
+    </form>
+
+    <form class="op-card" method="post" action="{% url 'workshop_run' 'propose' %}">
+      {% csrf_token %}
+      <h3>Propose an improvement</h3>
+      <p class="help">Asks the runner for an edit to a published article, then opens a proposal. Optionally runs the review panel after.</p>
+      <label>Article
+        <select name="article" required>
+          {% for a in articles %}<option value="{{ a.pk }}">{{ a.title }} ({{ a.published.label }})</option>{% empty %}<option value="">No published articles</option>{% endfor %}
+        </select>
+      </label>
+      <label>What should change?<textarea name="request" rows="2" required maxlength="2000"></textarea></label>
+      <label>SIMULATED scripted edit <span class="muted">(used only by the SIMULATED runner)</span>
+        <select name="scenario_case">
+          <option value="">— none —</option>
+          {% for c in simulated_cases %}<option value="{{ c.pk }}">{{ c.name }} · {{ c.article.title }}</option>{% endfor %}
+        </select>
+      </label>
+      <label class="check"><input type="checkbox" name="run_review" checked> Run the review panel when the proposal opens</label>
+      {% include 'core/_op_selection.html' with keys='instructions,reviewers,runner,policy,limits' %}
+      <button class="btn btn-primary" type="submit">Queue proposal job</button>
+    </form>
+
+    <form class="op-card" method="post" action="{% url 'workshop_run' 'review' %}">
+      {% csrf_token %}
+      <h3>Review a proposal</h3>
+      <p class="help">Runs the reviewer panel on a proposal awaiting a decision. Reviewers never see each other's verdicts.</p>
+      <label>Proposal
+        <select name="proposal" required>
+          {% for p in proposals %}<option value="{{ p.pk }}">{{ p.article.title }} · {{ p.candidate.label }} · {{ p.id|slice:":8" }}</option>{% empty %}<option value="">No proposals awaiting a decision</option>{% endfor %}
+        </select>
+      </label>
+      {% include 'core/_op_selection.html' with keys='reviewers,runner,limits' %}
+      <button class="btn btn-primary" type="submit">Queue review job</button>
+    </form>
+
+    <form class="op-card" method="post" action="{% url 'workshop_run' 'agent_cycle' %}">
+      {% csrf_token %}
+      <h3>Agent editorial cycle</h3>
+      <p class="help">One bounded real cycle: researcher plans sources, the app preserves snapshots, the writer cites only them, three reviewers run in fresh sessions, and the proposal stays <strong>pending</strong>. Needs the OpenCode runner; there is no paid fallback.</p>
+      {% if not agent_count %}
+        <p class="field-error">No agent identity. Run <code>python manage.py create_agent --name galactica-agent --operator admin</code>.</p>
+      {% endif %}
+      <label>Agent identity
+        <select name="agent" required>
+          {% for a in agents %}<option value="{{ a.pk }}">{{ a.name }} · operator {{ a.operator.username }} · {{ a.scopes|join:", " }}</option>{% endfor %}
+        </select>
+      </label>
+      <label>Topic<input name="topic" required maxlength="200" placeholder="Narrow topic"></label>
+      <label>Question<textarea name="question" rows="2" required maxlength="500" placeholder="A single answerable question"></textarea></label>
+      {% include 'core/_op_selection.html' with keys='research,instructions,reviewers,runner,limits' %}
+      <p class="fine">Default runner is SIMULATED; select the OpenCode, free-model runner in Advanced. The cycle refuses SIMULATED output.</p>
+      <button class="btn btn-primary" type="submit">Queue agent cycle</button>
+    </form>
+
+    <form class="op-card" method="post" action="{% url 'workshop_run' 'eval' %}">
+      {% csrf_token %}
+      <h3>Run editorial test cases</h3>
+      <p class="help">Runs cases through the same proposal and review machinery. Each candidate gets a fresh panel. Results are kept per case and per run.</p>
+      <fieldset class="case-picks">
+        <legend>Cases</legend>
+        {% for row in case_rows %}
+          <label class="check"><input type="checkbox" name="case_ids" value="{{ row.case.pk }}" checked> {{ row.case.name }} <span class="muted">({{ row.case.get_category_display }})</span></label>
+        {% endfor %}
+      </fieldset>
+      {% include 'core/_op_selection.html' with keys='reviewers,runner,limits' %}
+      <button class="btn btn-primary" type="submit">Queue test run</button>
+    </form>
+  </div>
+</section>
+
+<section class="card" aria-labelledby="effective-h">
+  <h2 id="effective-h">Effective configuration</h2>
+  <p class="help">The default version of each kind. New jobs snapshot whichever versions you select, so later edits never change a finished run.</p>
+  <table class="data">
+    <thead><tr><th>Kind</th><th>Default version</th><th>Key settings</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for kind, version in effective.items %}
+      <tr>
+        <td>{{ kind|capfirst }}</td>
+        <td>{% if version %}{{ version.name }} · v{{ version.version }}{% else %}<span class="muted">built-in</span>{% endif %}</td>
+        <td class="small">{% if version %}{% for k, v in version.data.items %}{% if k != "drafting" and k != "edit" and k != "review_preamble" and not "__instructions" in k %}<span class="kv">{{ k }}: {{ v }}</span> {% endif %}{% endfor %}{% endif %}</td>
+        <td>{% if version.provisional %}<span class="badge badge-provisional">Provisional</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section aria-labelledby="configs-h">
+  <h2 id="configs-h" class="section-h">Configuration versions</h2>
+  <p class="help">Versions are never overwritten. Editing creates a new version; duplicating creates a new family. All defaults are provisional until you have measured them with test cases.</p>
+  {% for group in grouped %}
+  <section class="card">
+    <h3>{{ group.label }}</h3>
+    <table class="data">
+      <thead><tr><th>Name</th><th>Version</th><th>Description</th><th>Actions</th></tr></thead>
+      <tbody>
+      {% for v in group.versions %}
+        <tr>
+          <td><strong>{{ v.name }}</strong>{% if v.is_default %} <span class="badge badge-default">default</span>{% endif %}{% if v.proposal_only %} <span class="badge badge-warn">proposal only</span>{% endif %}<br><code class="muted">{{ v.family }}</code></td>
+          <td>v{{ v.version }}{% if v.parent %}<br><span class="muted small">from v{{ v.parent.version }}</span>{% endif %}</td>
+          <td class="small">{{ v.description|truncatechars:200 }}</td>
+          <td class="actions">
+            {% if v.proposal_only %}
+              <span class="muted small">Not an accepted policy. Duplicate to experiment.</span>
+            {% else %}
+            <a href="{% url 'config_edit' v.pk %}">Edit (new version)</a>
+            {% endif %}
+            <form method="post" action="{% url 'config_new' %}" class="inline-form">{% csrf_token %}<input type="hidden" name="source" value="{{ v.pk }}"><button class="btn btn-tiny" type="submit">Duplicate</button></form>
+            {% if not v.is_default and not v.proposal_only %}<form method="post" action="{% url 'config_default' v.pk %}" class="inline-form">{% csrf_token %}<button class="btn btn-tiny btn-quiet" type="submit">Make default</button></form>{% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </section>
+  {% endfor %}
+</section>
+
+<section class="card" aria-labelledby="cases-h">
+  <h2 id="cases-h">Test cases</h2>
+  <p class="help">Expected outcomes are either a simulated expectation (not a human label) or unknown. Add human labels in the admin.</p>
+  <table class="data">
+    <thead><tr><th>Case</th><th>Category</th><th>Article</th><th>Expected</th><th>Latest outcome</th><th></th></tr></thead>
+    <tbody>
+    {% for row in case_rows %}
+      <tr>
+        <td><strong>{{ row.case.name }}</strong><br><span class="muted small">{{ row.case.description|truncatechars:120 }}</span></td>
+        <td>{{ row.case.get_category_display }}</td>
+        <td>{{ row.case.article.title }}</td>
+        <td>{{ row.case.get_expected_display|truncatechars:24 }}<br><span class="badge badge-{{ row.case.label_source }}">{{ row.case.get_label_source_display }}</span></td>
+        <td>{% if row.result %}<span class="badge badge-{{ row.result.outcome }}">{{ row.result.outcome }}</span>{% if row.result.matches == True %}<span class="badge badge-succeeded">match</span>{% elif row.result.matches == False %}<span class="badge badge-failed">mismatch</span>{% else %}<span class="badge">no expectation</span>{% endif %}{% else %}<span class="muted">not run</span>{% endif %}</td>
+        <td></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6"><div class="empty-inline">No test cases. Run <code>python manage.py seed_demo</code>.</div></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  <p><a href="{% url 'evals' %}">Compare runs →</a></p>
+</section>
+
+<section class="card">
+  <h2>Recent jobs</h2>
+  <ul class="plain-list">
+    {% for j in recent_jobs %}
+      <li><a href="{% url 'job_detail' j.pk %}">{{ j.label|truncatechars:80 }}</a> <span class="badge badge-{{ j.status }}">{{ j.get_status_display }}</span> <span class="badge badge-{{ j.runner }}">{{ j.runner|upper }}</span></li>
+    {% empty %}<li class="empty-inline">No jobs yet.</li>{% endfor %}
+  </ul>
+  <a class="card-link" href="{% url 'jobs' %}">All jobs →</a>
+</section>
+{% endblock %}

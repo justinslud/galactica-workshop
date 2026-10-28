@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}Library{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Library</p>
+  <h1>Articles</h1>
+  <p class="lede">Published articles, demonstration drafts and workshop drafts. Reading needs no account.</p>
+</header>
+
+<form class="filter-bar" method="get" role="search">
+  <label class="grow">Search<input type="search" name="q" value="{{ q }}" placeholder="Title or opening text"></label>
+  <label>Status
+    <select name="status">
+      {% for value, label in status_choices %}<option value="{{ value }}" {% if status == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Provenance
+    <select name="provenance">
+      <option value="all">All</option>
+      {% for value, label in provenance_choices %}<option value="{{ value }}" {% if provenance == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-quiet" type="submit">Apply</button>
+</form>
+
+<p class="result-count">{{ articles|length }} article{{ articles|length|pluralize }}</p>
+
+<div class="article-list">
+  {% for a in articles %}
+  <article class="article-card">
+    <div>
+      <h2><a href="{% url 'article' a.slug %}">{{ a.title }}</a></h2>
+      <p class="opening-snip">{{ a.opening|truncatechars:180 }}</p>
+      <p class="meta-line">
+        {% if a.published %}<span class="badge badge-published">{{ a.published.label }} published</span>{% else %}<span class="badge badge-draft">Not published</span>{% endif %}
+        {% if a.provenance == 'demonstration' %}<span class="badge badge-demonstration">Demonstration draft</span>{% elif a.provenance == 'simulated' %}<span class="badge badge-simulated">SIMULATED</span>{% endif %}
+        {% if a.open_proposals %}<span class="badge badge-pending">{{ a.open_proposals }} open proposal{{ a.open_proposals|pluralize }}</span>{% endif %}
+      </p>
+    </div>
+    <a class="btn btn-small btn-quiet" href="{% url 'article' a.slug %}">Read</a>
+  </article>
+  {% empty %}
+  <div class="empty-state">
+    <h2>No articles match</h2>
+    <p>Clear the filters, or start one. Editors can write a workshop draft; a staff member can run a research job.</p>
+    {% if user.is_authenticated %}<a class="btn btn-primary" href="{% url 'article_new' %}">+ New article</a>{% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

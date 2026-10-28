@@ -1,0 +1,57 @@
+{# Shared by the reading view and the editor preview, so both use the same renderer. #}
+<article class="article-body{% if preview %} article-preview{% endif %}">
+  <h1 class="article-title">{{ title }}</h1>
+  {% if opening %}<p class="opening">{{ opening }}</p>{% endif %}
+  {% for item in items %}
+    <section class="article-block block-{{ item.kind|default:'markdown' }}">
+      {{ item.html }}
+      {% if item.claims %}
+      <details class="claims">
+        <summary>Claims and evidence ({{ item.claims|length }})</summary>
+        <ol class="claim-list">
+          {% for row in item.claims %}
+          <li id="claim-{{ row.claim.id }}">
+            <div class="claim-head">
+              <span class="badge badge-{{ row.claim.support_status }}">{{ row.claim.get_support_status_display }}</span>
+              <span class="claim-text">{{ row.claim.text }}</span>
+            </div>
+            {% if row.citations %}
+            <ul class="claim-citations">
+              {% for c in row.citations %}
+              <li>
+                {% if c.url %}<a href="{{ c.url }}" rel="noopener noreferrer nofollow">{{ c.title }}</a>{% else %}<strong>{{ c.title }}</strong>{% endif %}
+                <span class="check">{{ c.check }}</span>
+                <span class="badge badge-{{ c.stance|lower }}">{{ c.stance }}</span>
+                <span class="muted small">{{ c.strength }}</span>
+                {% if c.sha256 %}<code class="small">sha256 {{ c.sha256|slice:":12" }}</code>{% endif %}
+                <p class="supports">{{ c.supports }}</p>
+                {% if c.quote %}<blockquote class="quote">{{ c.quote }}</blockquote>{% endif %}
+              </li>
+              {% endfor %}
+            </ul>
+            {% else %}
+            <p class="field-error">No preserved citation is attached to this claim.</p>
+            {% endif %}
+          </li>
+          {% endfor %}
+        </ol>
+      </details>
+      {% elif item.citations %}
+      <details class="evidence">
+        <summary>Evidence ({{ item.citations|length }})</summary>
+        <ul>
+          {% for c in item.citations %}
+          <li>
+            {% if c.url %}<a href="{{ c.url }}" rel="noopener noreferrer nofollow">{{ c.title }}</a>{% else %}<strong>{{ c.title }}</strong>{% endif %}
+            <span class="check">{{ c.check }}</span>
+            <p class="supports">Supports: {{ c.supports }}</p>
+          </li>
+          {% endfor %}
+        </ul>
+      </details>
+      {% endif %}
+    </section>
+  {% empty %}
+    <p class="empty-inline">This revision has no blocks yet.</p>
+  {% endfor %}
+</article>

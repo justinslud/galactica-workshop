@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Edit config · {{ config.name }}{% endblock %}
+{% block content %}
+<div class="page-title">
+  <p class="eyebrow">WORKSHOP</p>
+  <h1>Edit: {{ config.name }}</h1>
+  <p>{{ config.kind }} · version {{ config.version }}</p>
+</div>
+
+<form method="post" action="">
+  {% csrf_token %}
+  <div class="form-field">
+    <label for="data">Configuration data (JSON)</label>
+    <textarea id="data" name="data" rows="20" style="width:100%;font-family:monospace;">{{ data_str }}</textarea>
+  </div>
+  <div style="display:flex;gap:12px;">
+    <button type="submit" class="primary-action">Save</button>
+    <a class="secondary-action" href="{% url 'workshop' %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

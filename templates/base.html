@@ -1,0 +1,50 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Galactica Workshop{% endblock %} · Galactica</title>
+  <link rel="stylesheet" href="{% static 'css/galactica.css' %}">
+  <script src="{% static 'js/workshop.js' %}" defer></script>
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+<a class="skip-link" href="#main">Skip to content</a>
+<div class="app">
+  <aside class="sidebar">
+    <a class="brand" href="{% url 'dashboard' %}"><span class="brand-mark">G</span><span>Galactica<small>Workshop · local</small></span></a>
+    <nav aria-label="Main">
+      <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
+      <a href="{% url 'library' %}" class="{% if request.resolver_match.url_name == 'library' %}active{% endif %}">Library</a>
+      {% if user.is_authenticated %}
+      <a href="{% url 'proposals' %}" class="{% if request.resolver_match.url_name == 'proposals' or request.resolver_match.url_name == 'proposal' %}active{% endif %}">Proposals</a>
+      <a href="{% url 'jobs' %}" class="{% if request.resolver_match.url_name == 'jobs' or request.resolver_match.url_name == 'job_detail' %}active{% endif %}">Jobs</a>
+      <a href="{% url 'evals' %}" class="{% if request.resolver_match.url_name == 'evals' %}active{% endif %}">Test cases</a>
+      {% if user.is_staff %}<a href="{% url 'workshop' %}" class="{% if request.resolver_match.url_name == 'workshop' %}active{% endif %}">Workshop</a>{% endif %}
+      {% endif %}
+    </nav>
+    {% if user.is_authenticated %}<a class="btn btn-primary btn-block" href="{% url 'article_new' %}">+ New article</a>{% endif %}
+    <div class="sidebar-foot">
+      {% if user.is_authenticated %}
+        <div class="who">Signed in as <strong>{{ user.username }}</strong>{% if user.is_staff %} <span class="badge badge-staff">staff</span>{% else %} <span class="badge">editor</span>{% endif %}</div>
+        <form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="btn btn-quiet btn-block" type="submit">Log out</button></form>
+        {% if user.is_staff %}<a class="muted-link" href="{% url 'admin:index' %}">Django admin</a>{% endif %}
+      {% else %}
+        <a class="btn btn-quiet btn-block" href="{% url 'login' %}?next={{ request.get_full_path|urlencode }}">Log in</a>
+      {% endif %}
+      <p class="fine">Localhost only. Demonstration content is labelled. SIMULATED runs make no model calls.</p>
+    </div>
+  </aside>
+  <div class="main">
+    <main id="main" class="content {% block content_class %}{% endblock %}">
+      {% if messages %}
+      <div class="flashes" role="status" aria-live="polite">
+        {% for message in messages %}<div class="flash flash-{{ message.tags }}">{{ message }}</div>{% endfor %}
+      </div>
+      {% endif %}
+      {% block content %}{% endblock %}
+    </main>
+  </div>
+</div>
+</body>
+</html>

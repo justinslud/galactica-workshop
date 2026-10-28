@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}History · {{ article.title }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow"><a href="{% url 'article' article.slug %}">{{ article.title }}</a> · history</p>
+  <h1>Revisions and changes</h1>
+  <p class="lede">Every revision is kept. A revert creates a new revision that restores earlier content; nothing is erased.</p>
+</header>
+
+<section class="card">
+  <h2>Revisions</h2>
+  <table class="data">
+    <thead><tr><th>Rev</th><th>State</th><th>Title</th><th>Created</th><th>Summary</th><th>Actions</th></tr></thead>
+    <tbody>
+    {% for r in revisions %}
+      <tr class="{% if r == article.published %}current{% endif %}">
+        <td><strong>{{ r.label }}</strong>{% if r == article.published %} <span class="badge badge-published">current</span>{% endif %}</td>
+        <td><span class="badge badge-{{ r.state }}">{{ r.get_state_display }}</span></td>
+        <td>{{ r.title }}</td>
+        <td>{{ r.created_at|date:"j M Y H:i" }}<br><span class="muted">{{ r.created_by.username|default:"system" }}</span></td>
+        <td>{{ r.summary|default:"—" }}{% if r.reverts %}<br><span class="muted">restores {{ r.reverts.label }}</span>{% endif %}</td>
+        <td class="actions">
+          {% if r.state == 'published' or r.state == 'superseded' %}<a href="{% url 'article' article.slug %}?rev={{ r.number }}">View</a>{% endif %}
+          {% if r.state == 'draft' and user.is_authenticated %}<a href="{% url 'editor' article.slug %}">Edit</a>{% endif %}
+          {% if user.is_staff and r.state == 'superseded' and article.published %}
+          <details class="revert">
+            <summary>Revert to {{ r.label }}</summary>
+            <form method="post" action="{% url 'article_revert' article.slug %}" class="form-stack">
+              {% csrf_token %}
+              <input type="hidden" name="target" value="{{ r.pk }}">
+              <input type="hidden" name="expected_current" value="{{ article.published.pk }}">
+              <label>Reason (required)<input name="reason" minlength="5" maxlength="500" required placeholder="Why restore this?"></label>
+              <button class="btn btn-small btn-danger" type="submit">Create revert revision</button>
+              <p class="help">Current is {{ article.published.label }}. If it changes first, this is refused.</p>
+            </form>
+          </details>
+          {% endif %}
+        </td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="6" class="empty-inline">No revisions yet.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+<section class="card">
+  <h2>Activity</h2>
+  <ol class="timeline-list">
+    {% for e in events %}
+    <li>
+      <time>{{ e.created_at|date:"j M Y H:i" }}</time>
+      <strong>{{ e.action|cut:"_"|capfirst }}</strong>
+      {% if e.actor %}by {{ e.actor.username }}{% endif %}
+      {% if e.agent %}· agent <strong>{{ e.agent.name }}</strong>{% if e.model %} ({{ e.model }}){% endif %}{% endif %}
+      {% if e.revision %}· {{ e.revision.label }}{% endif %}
+      {% if e.proposal %}· <a href="{% url 'proposal' e.proposal.pk %}">proposal {{ e.proposal.id|slice:":8" }}</a>{% endif %}
+      {% if e.reason %}<p class="reason">{{ e.reason }}</p>{% endif %}
+      {% if e.detail %}<details class="detail"><summary>Detail</summary><pre>{{ e.detail }}</pre></details>{% endif %}
+    </li>
+    {% empty %}
+    <li class="empty-inline">No activity recorded.</li>
+    {% endfor %}
+  </ol>
+</section>
+{% endblock %}

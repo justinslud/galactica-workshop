@@ -1,0 +1,159 @@
+{% extends 'base.html' %}
+{% block title %}Job · {{ job.label }}{% endblock %}
+{% block head %}{% if active %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow"><a href="{% url 'jobs' %}">Jobs</a> · {{ job.get_kind_display }}</p>
+  <h1>{{ job.label }}</h1>
+  <p class="status-row">
+    <span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span>
+    <span class="badge badge-{{ job.runner }}">{{ job.runner|upper }}{% if job.runner == 'simulated' %} · no model calls{% endif %}</span>
+    {% if job.cancel_requested and active %}<span class="badge badge-warn">Cancel requested</span>{% endif %}
+  </p>
+  {% if active %}<p class="help">Live: this page refreshes every 3 seconds while the job runs.</p>{% endif %}
+</header>
+
+{% if user.is_staff %}
+<div class="action-row">
+  {% if job.can_cancel %}
+    <form method="post" action="{% url 'job_cancel' job.pk %}" class="inline-form" data-confirm="Cancel this job? Work already recorded is kept.">
+      {% csrf_token %}<button class="btn btn-danger" type="submit">Cancel job</button>
+    </form>
+  {% endif %}
+  {% if job.can_retry %}
+    <form method="post" action="{% url 'job_retry' job.pk %}" class="inline-form">
+      {% csrf_token %}<button class="btn btn-primary" type="submit">Retry with the same configuration</button>
+    </form>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if job.error %}
+<div class="banner banner-error"><strong>{{ job.get_status_display }}:</strong> {{ job.error }}</div>
+{% endif %}
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Timing</h2>
+    <dl class="meta-list">
+      <dt>Queued</dt><dd>{{ job.created_at|date:"j M Y H:i:s" }}{% if job.created_by %} by {{ job.created_by.username }}{% endif %}</dd>
+      <dt>Started</dt><dd>{{ job.started_at|date:"j M Y H:i:s"|default:"—" }}</dd>
+      <dt>Heartbeat</dt><dd>{{ job.heartbeat_at|date:"j M Y H:i:s"|default:"—" }}{% if job.worker_id %} · {{ job.worker_id }}{% endif %}</dd>
+      <dt>Finished</dt><dd>{{ job.finished_at|date:"j M Y H:i:s"|default:"—" }}</dd>
+      <dt>Retry of</dt><dd>{% if job.retry_of %}<a href="{% url 'job_detail' job.retry_of.pk %}">{{ job.retry_of.label|truncatechars:60 }}</a>{% else %}—{% endif %}</dd>
+    </dl>
+  </section>
+
+  <section class="card">
+    <h2>Outputs</h2>
+    <ul class="plain-list">
+      {% if job.article %}<li>Article: <a href="{% url 'article' job.article.slug %}">{{ job.article.title }}</a>{% if job.article.provenance == 'simulated' %} <span class="badge badge-simulated">SIMULATED</span>{% endif %}
+        {% if job.kind == 'research_draft' %} · <a href="{% url 'editor' job.article.slug %}">open draft</a>{% endif %}</li>{% endif %}
+      {% if job.proposal %}<li>Proposal: <a href="{% url 'proposal' job.proposal.pk %}">{{ job.proposal.id|slice:":8" }}</a></li>{% endif %}
+      {% if job.output.proposal %}<li>Proposal created: <a href="{% url 'proposal' job.output.proposal %}">{{ job.output.proposal|slice:":8" }}</a> ({{ job.output.candidate }})</li>{% endif %}
+      {% if job.output.review_job %}<li>Review panel queued: <a href="{% url 'job_detail' job.output.review_job %}">{{ job.output.review_job|slice:":8" }}</a></li>{% endif %}
+      {% if job.output.outcome %}<li>Panel outcome: <span class="badge badge-{{ job.output.outcome }}">{{ job.output.outcome }}</span> (a staff member still decides)</li>{% endif %}
+      {% if job.output.results %}<li>Test results: {{ job.output.results|length }} candidate result(s); <a href="{% url 'evals' %}">compare runs</a></li>{% endif %}
+      {% if job.output.evaluation %}<li>Adversarial evaluation candidate: <a href="{% url 'proposal' job.output.evaluation.proposal %}">{{ job.output.evaluation.proposal|slice:":8" }}</a> — outcome <span class="badge badge-{{ job.output.evaluation.outcome }}">{{ job.output.evaluation.outcome }}</span>, never publishable. Claim: <em>{{ job.output.evaluation.claim }}</em></li>{% endif %}
+      {% if not job.article and not job.proposal and not job.output %}<li class="empty-inline">No outputs yet.</li>{% endif %}
+    </ul>
+  </section>
+</div>
+
+{% if agent_runs %}
+<section class="card">
+  <h2>Agent runs</h2>
+  <p class="help">One row per model call. Model IDs are what the runner was asked to use and are recorded with the result.</p>
+  <table class="data"><thead><tr><th>Profile</th><th>Role</th><th>Model</th><th>Status</th><th>Started</th><th>Usage</th></tr></thead><tbody>
+  {% for r in agent_runs %}
+    <tr><td>{{ r.profile }}</td><td>{{ r.role|default:"—" }}</td><td><code>{{ r.model }}</code>{% if r.model_variant %}#{{ r.model_variant }}{% endif %}</td>
+      <td><span class="badge badge-{{ r.status }}">{{ r.get_status_display }}</span>{% if r.error %}<div class="error-snip">{{ r.error|truncatechars:120 }}</div>{% endif %}</td>
+      <td>{{ r.started_at|date:"H:i:s" }}</td><td class="small">{% if r.usage_measured %}{{ r.usage.calls }} step(s): {{ r.usage.input_tokens|default:0 }} in / {{ r.usage.output_tokens|default:0 }} out{% if r.usage.reported_cost is not None %}, cost {{ r.usage.reported_cost }}{% endif %}<br><span class="muted">{{ r.usage.source }}</span>{% else %}<span class="muted">{{ r.usage_note|default:"not measured" }}</span>{% endif %}</td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+
+{% if job.kind == 'agent_cycle' and job.output.snapshots %}
+<section class="card">
+  <h2>Preserved evidence</h2>
+  <p class="help">Raw snapshots are stored separately from agent interpretation. The writer saw only bounded excerpts.</p>
+  <ul class="plain-list">
+    {% for s in job.output.snapshots %}
+      <li><strong>{{ s.title }}</strong><br><a href="{{ s.url }}" rel="noopener noreferrer nofollow">{{ s.url }}</a><br><code class="small">sha256 {{ s.sha256 }}</code></li>
+    {% endfor %}
+  </ul>
+  {% if job.output.failures %}<p class="error-snip">Refused or failed: {{ job.output.failures|join:"; " }}</p>{% endif %}
+</section>
+{% endif %}
+
+{% if reviews %}
+<section class="card">
+  <h2>Reviews recorded by this job</h2>
+  <table class="data"><thead><tr><th>Role</th><th>Verdict</th><th>Comment</th><th>Proposal</th></tr></thead><tbody>
+  {% for r in reviews %}<tr><td>{{ r.get_role_display|default:r.role }}</td><td><span class="badge badge-{{ r.verdict }}">{{ r.get_verdict_display }}</span></td><td class="small">{{ r.comment|truncatechars:160 }}</td><td><a href="{% url 'proposal' r.proposal.pk %}">{{ r.proposal.id|slice:":8" }}</a></td></tr>{% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+
+{% if eval_results %}
+<section class="card">
+  <h2>Per-case outcomes</h2>
+  <table class="data"><thead><tr><th>Case</th><th>Candidate</th><th>Outcome</th><th>Expected</th><th>Match</th><th>Proposal</th></tr></thead><tbody>
+  {% for r in eval_results %}
+    <tr><td>{{ r.case.name }}</td><td>{{ r.candidate_label }}</td><td><span class="badge badge-{{ r.outcome }}">{{ r.outcome }}</span></td>
+      <td>{{ r.expected }}{% if r.case.label_source == 'simulated' %} <span class="badge badge-simulated">simulated</span>{% endif %}</td>
+      <td>{% if r.matches == True %}<span class="badge badge-succeeded">match</span>{% elif r.matches == False %}<span class="badge badge-failed">mismatch</span>{% else %}<span class="muted">no expectation</span>{% endif %}</td>
+      <td><a href="{% url 'proposal' r.proposal.pk %}">{{ r.proposal.id|slice:":8" }}</a></td></tr>
+  {% endfor %}
+  </tbody></table>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>Progress</h2>
+  <ol class="event-log">
+    {% for e in events %}
+      <li class="level-{{ e.level }}"><time>{{ e.created_at|date:"H:i:s" }}</time> <span>{{ e.message }}</span></li>
+    {% empty %}
+      <li class="empty-inline">No events yet.</li>
+    {% endfor %}
+  </ol>
+</section>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>Usage</h2>
+    {% if job.runner == 'simulated' %}
+      <p><span class="badge badge-simulated">SIMULATED</span> No model calls and no cost. Model calls counted: {{ job.model_calls }} (budget bookkeeping only).</p>
+    {% elif usage_measured %}
+      <p class="help">Measured by OpenCode. Provider steps can exceed application calls when a call uses tools. Not an estimate.</p>
+      <dl class="meta-list">
+        <dt>Application calls</dt><dd>{{ job.model_calls }} of {{ job.max_model_calls }} allowed</dd>
+        <dt>Provider steps</dt><dd>{{ job.usage.calls|default:"not reported" }}</dd>
+        <dt>Input tokens</dt><dd>{{ job.usage.input_tokens|default:"not reported" }}</dd>
+        <dt>Output tokens</dt><dd>{{ job.usage.output_tokens|default:"not reported" }}</dd>
+        <dt>Reported cost</dt><dd>{% if job.usage.reported_cost is None %}not reported by OpenCode{% else %}{{ job.usage.reported_cost }} (as reported){% endif %}</dd>
+        <dt>Models</dt><dd>{{ job.usage.model|default:"—" }}</dd>
+      </dl>
+    {% else %}
+      <p class="empty-inline">No measured usage recorded. Cost is never estimated here.</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h2>Configuration snapshot</h2>
+    <p class="help">Captured when the job was queued. Later edits to versions do not change it.</p>
+    <details class="detail"><summary>Show resolved configuration</summary>
+      <table class="data small"><tbody>
+      {% for kind, snap in config.items %}
+        <tr><th>{{ kind|capfirst }}</th><td>{{ snap.name }} v{{ snap.version }}{% if snap.provisional %} <span class="badge badge-provisional">provisional</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody></table>
+      <pre class="snapshot">{{ config|pprint }}</pre>
+    </details>
+    <details class="detail"><summary>Job input</summary><pre>{{ job.input|pprint }}</pre></details>
+  </section>
+</div>
+{% endblock %}

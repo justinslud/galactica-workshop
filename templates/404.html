@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block title %}Not found{% endblock %}
+{% block content %}
+<header class="page-head"><p class="eyebrow">Not found</p><h1>Nothing here</h1><p class="lede">The page or record does not exist, or was removed.</p></header>
+<a class="btn btn-quiet" href="{% url 'library' %}">Browse the library</a>
+{% endblock %}

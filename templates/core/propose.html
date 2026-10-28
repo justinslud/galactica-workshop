@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}Propose change · {{ article.title }}{% endblock %}
+{% block content %}
+<div class="page-title">
+  <p class="eyebrow">PROPOSAL</p>
+  <h1>Propose change: {{ article.title }}</h1>
+</div>
+
+<form method="post" action="">
+  {% csrf_token %}
+  <div class="form-field">
+    <label for="rationale">Rationale</label>
+    <textarea id="rationale" name="rationale" rows="3" required>{{ rationale|default:'' }}</textarea>
+  </div>
+  <div class="form-field">
+    <label for="body">Proposed content (Markdown)</label>
+    <textarea id="body" name="body" rows="16" style="width:100%;font-family:monospace;">{{ body|default:'' }}</textarea>
+  </div>
+  <div style="display:flex;gap:12px;">
+    <button type="submit" class="primary-action">Submit proposal</button>
+    <a class="secondary-action" href="{% url 'article' article.slug %}">Cancel</a>
+  </div>
+</form>
+{% endblock %}

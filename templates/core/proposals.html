@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% block title %}Proposals{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Editorial</p>
+  <h1>Proposals</h1>
+  <p class="lede">Proposed changes, their review status and whether they still apply to the current article.</p>
+</header>
+
+<nav class="tabs" aria-label="Proposal filters">
+  <a href="?status=open" class="{% if status == 'open' and not show_eval %}active{% endif %}">Open</a>
+  <a href="?status=all" class="{% if status == 'all' and not show_eval %}active{% endif %}">All</a>
+  <a href="?status=published" class="{% if status == 'published' %}active{% endif %}">Published</a>
+  <a href="?status=rejected" class="{% if status == 'rejected' %}active{% endif %}">Rejected</a>
+  <a href="?origin=evaluation" class="{% if show_eval %}active{% endif %}">Test-case proposals</a>
+</nav>
+
+<table class="data">
+  <thead><tr><th>Article</th><th>Status</th><th>Origin</th><th>Base → candidate</th><th>Reviews</th><th>Created</th></tr></thead>
+  <tbody>
+  {% for p in proposals %}
+    <tr>
+      <td><a href="{% url 'proposal' p.pk %}">{{ p.article.title }}</a><br><span class="muted">{{ p.rationale|truncatechars:90 }}</span></td>
+      <td><span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span>
+        {% if p.is_stale %}<br><span class="badge badge-stale">Stale</span>{% endif %}
+        {% if p.repeat_of %}<br><span class="badge badge-warn">Repeat</span>{% endif %}</td>
+      <td><span class="badge badge-{{ p.origin }}">{{ p.get_origin_display }}</span></td>
+      <td>{{ p.base.label|default:"—" }} → {{ p.candidate.label }}</td>
+      <td>{{ p.reviews.count }}</td>
+      <td>{{ p.created_at|date:"j M H:i" }}</td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="6">
+      <div class="empty-state">
+        <h2>No proposals here</h2>
+        <p>Proposals appear when an editor submits a draft or a workshop job proposes an edit.</p>
+        <a class="btn btn-primary" href="{% url 'library' %}">Choose an article to edit</a>
+      </div>
+    </td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

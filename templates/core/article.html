@@ -1,0 +1,67 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block title %}{{ article.title }}{% endblock %}
+{% block body_class %}reading{% endblock %}
+{% block content_class %}reading{% endblock %}
+{% block content %}
+{% if article.provenance == 'demonstration' %}
+<div class="banner banner-demo"><strong>Demonstration draft.</strong> Illustrative content for the workshop. Not a verified reference article. Claims marked [needs source] are open.</div>
+{% elif article.provenance == 'agent' %}
+<div class="banner banner-agent"><strong>Agent-produced.</strong> Written by an editorial agent from preserved sources. {% if article.published %}Published after a staff decision.{% else %}Pending; not published.{% endif %}</div>
+{% elif article.provenance == 'simulated' %}
+<div class="banner banner-sim"><strong>SIMULATED output.</strong> Produced by the offline simulated runner. Not research.</div>
+{% endif %}
+
+{% if user.is_staff %}
+<div class="staff-bar" aria-label="Staff controls">
+  <span class="staff-label">Staff</span>
+  <a class="btn btn-small" href="{% url 'editor' article.slug %}">Edit draft</a>
+  <a class="btn btn-small btn-quiet" href="{% url 'history' article.slug %}">History and revert</a>
+  <a class="btn btn-small btn-quiet" href="{% url 'proposals' %}?status=open">Open proposals</a>
+  <a class="btn btn-small btn-quiet" href="{% url 'workshop' %}">Workshop</a>
+  <a class="btn btn-small btn-quiet" href="{% url 'admin:core_revision_changelist' %}?article__slug__exact={{ article.slug }}">Admin records</a>
+</div>
+{% elif user.is_authenticated %}
+<div class="inline-actions"><a class="btn btn-small" href="{% url 'editor' article.slug %}">Suggest an edit</a><a class="btn btn-small btn-quiet" href="{% url 'history' article.slug %}">History</a></div>
+{% endif %}
+
+{% if viewing_old %}
+<div class="banner banner-info">Viewing r{{ revision.number }}, which is not the current revision.
+  <a href="{% url 'article' article.slug %}">Back to current{% if article.published %} ({{ article.published.label }}){% endif %}</a>.</div>
+{% endif %}
+{% if draft_banner %}
+<div class="banner banner-warn">Draft preview. This revision is not published and is visible only to logged-in users.
+  <a href="{% url 'editor' article.slug %}">Open the editor</a>.</div>
+{% endif %}
+
+{% if revision %}
+<p class="meta-line">
+  {{ revision.label }} · {{ revision.get_state_display }}
+  {% if revision.published_at %}· published {{ revision.published_at|date:"j M Y" }}{% endif %}
+  {% if revision.summary %}· {{ revision.summary }}{% endif %}
+</p>
+{% include 'core/_article_body.html' with title=revision.title opening=revision.opening items=items %}
+{% else %}
+<div class="empty-state">
+  <h2>Not published yet</h2>
+  <p>This article has no published revision. {% if user.is_authenticated %}Open the editor to write the first draft and propose it.{% else %}Log in to draft it.{% endif %}</p>
+  {% if user.is_authenticated %}<a class="btn btn-primary" href="{% url 'editor' article.slug %}">Open editor</a>{% endif %}
+</div>
+{% endif %}
+
+{% if user.is_authenticated and open_proposals %}
+<section class="open-proposals" aria-labelledby="open-h">
+  <h2 id="open-h">Open proposals against this article</h2>
+  <ul class="plain-list">
+    {% for p in open_proposals %}
+    <li>
+      <a href="{% url 'proposal' p.pk %}">Proposal {{ p.id|slice:":8" }}</a>
+      <span class="badge badge-{{ p.status }}">{{ p.get_status_display }}</span>
+      <span class="badge badge-{{ p.origin }}">{{ p.get_origin_display }}</span>
+      {% if p.is_stale %}<span class="badge badge-stale">Stale: article moved on</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}
