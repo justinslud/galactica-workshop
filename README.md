@@ -6,6 +6,11 @@ articles and an inspectable editorial process. This is a **local-only Django app
 All three seeded articles are **demonstration drafts**, not verified reference articles. Reviews and edits produced by
 the offline runner are labelled **SIMULATED** everywhere.
 
+## Repository
+
+Private remote: <https://github.com/justinslud/galactica-workshop> (local `main` tracks `origin/main`).
+The local database, `.venv/`, `runtime/`, logs and generated static files are intentionally excluded.
+
 ## Setup
 
 ```sh

@@ -64,12 +64,20 @@ test that publishes claims and checks the expansion.
 - Rendered proposal/job pages 200; claim IDs, `conflicting`, `unsupported`, snapshot hashes and “No citation attached”
   visible. No server traceback.
 
-### Actual processes (verified with `ps` at 2026-10-28 19:18 EDT)
+### Actual processes (verified with `ps` at 2026-10-28 19:20 EDT)
 
-- Web: PID **407214** — `.venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload` → http://127.0.0.1:8001/
-- Worker: PID **407216** — `.venv/bin/python manage.py run_worker`
+- Web: PID **407586** — `.venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload` → http://127.0.0.1:8001/
+- Worker: PID **407588** — `.venv/bin/python manage.py run_worker`
 - Logs: `/tmp/opencode/galactica-server.log`, `/tmp/opencode/galactica-worker.log`
 - No queued/running jobs at verification. PIDs change on restart; check `ps -eo pid,args | grep manage.py`.
+- Unrelated port 8000 belongs to other projects, not this app.
+
+### Repository
+
+- Local Git repository initialized on `main` (authorized in this pass).
+- Private GitHub: <https://github.com/justinslud/galactica-workshop>
+- Excluded: `.venv/`, `db.sqlite3`, `runtime/`, `__pycache__/`, logs, `.env`, generated staticfiles. The database and
+  preserved runtime artifacts stay local; they are not in the repository.
 
 ### Usage status
 
