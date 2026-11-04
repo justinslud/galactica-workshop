@@ -344,3 +344,10 @@ blockquote.quote { margin: 4px 0 0; padding-left: 10px; border-left: 2px solid v
 .badge-conflicting { border-color: #c9a85a; color: var(--sim); background: var(--sim-soft); }
 .badge-absent { border-color: #d6a4a4; color: var(--err); background: var(--err-soft); }
 .badge-conflicts { border-color: #d6a4a4; color: var(--err); background: var(--err-soft); }
+
+/* Policy lab */
+.lab-matrix td { vertical-align: top; min-width: 120px; }
+.lab-escape { display: block; font-weight: 700; font-size: 13px; }
+.lab-escape.lab-good { color: var(--ok); }
+.lab-escape.lab-warn { color: var(--warn); }
+.lab-escape.lab-bad { color: var(--err); }

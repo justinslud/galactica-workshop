@@ -1,6 +1,6 @@
 # CURRENT — Galactica Workshop
 
-**Updated:** 2026-10-28 (latest pass: claim-level citation enforcement)
+**Updated:** 2026-11-04 (latest pass: policy lab v1)
 **Location:** `/home/justin/projects/galactica-workshop` (separate Django app; the TypeScript project at
 `/home/justin/projects/galactica` is untouched)
 
@@ -9,6 +9,51 @@
 Build the first usable local Galactica workshop: editable, versioned articles; proposals with evidence and independent
 reviews; human publication, correction and revert; configurable runner/reviewer/policy versions; background jobs; and
 repeatable editorial test cases. Django + SQLite, localhost only, no Docker/Redis/SPA.
+
+## Latest pass — 2026-11-04: policy lab v1 (simulated)
+
+**Objective:** make the autonomy question measurable instead of argued.
+
+### Implemented
+
+- `core/policy_lab.py` — pure simulation, no database, no model calls, no network. Scenarios carry planted defects
+  (unsupported claim, overgeneralization, dropped qualification, number change, citation laundering, dead link, framing
+  omission). Panels carry per-role catch rates plus a `correlation` factor: 1.0 means every reviewer sees the same
+  signal, so adding roles adds no information. Policies are ordered rule lists with an objection budget. Every trial is
+  deterministic for a seed.
+- `manage.py run_policy_lab` writes `runtime/lab/latest.json` and a timestamped copy.
+- `/lab/` renders the policy × risk-class matrix (escape rate and human reviews per 100 edits); nav link next to
+  Test cases.
+- 20 tests: rule matching, determinism, correlation, audit sampling, report aggregation, view rendering.
+
+### Measured (300 trials per cell, seed 7, 12 scenarios, 6 policies, 3 panels)
+
+- **one-model panel** (correlation 0.85, the current setup): publishing when no reviewer objects escapes **44.2%** of
+  standard-risk and **57.2%** of high-risk defective edits.
+- **mixed panel** (correlation 0.30): 22.3% and 44.0%.
+- **weak panel**: 75.8% and 78.8%.
+- Auditing half of standard edits does not rescue it: 44.8% escape at 78 human reviews per 100 edits, worse than
+  reviewing all of them.
+- Tiered policy (autonomy only for cosmetic/low) is 0% escape but 100 human reviews per 100 edits for standard — no
+  better than human-all with today's panel.
+
+### Interpretation
+
+The lab does not say "agents cannot be trusted". It says the current panel, as configured, does not buy a safe
+delegation cell for ordinary edits. Escape falls roughly with correlation, so the useful lever is reviewer
+independence, not a cleverer rule list.
+
+### Limitations
+
+- Catch rates and correlation are assumptions, not measurements.
+- 12 synthetic scenarios, one defect mix per risk class; no real model output feeds the lab yet.
+- `human / 100` counts queued plus audited edits; block explanations are not counted as human work.
+- No persistence beyond the JSON report; no shadow mode yet.
+
+### Next
+
+Measure catch rates from recorded review runs (the planted-defect evaluation already produces per-claim verdicts) and
+replace the assumed numbers. Then re-run the matrix before proposing any auto-publication cell.
 
 ## Latest pass — 2026-10-28: claim-level citation enforcement (verified)
 

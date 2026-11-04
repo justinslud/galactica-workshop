@@ -737,6 +737,44 @@ def evals(request):
     return render(request, 'core/evals.html', {'rows': rows, 'runs': runs, 'cases': cases})
 
 
+# ----- Policy lab ------------------------------------------------------------------------------------
+
+def lab_view(request):
+    """Read the latest policy-lab report written by `manage.py run_policy_lab`."""
+    from pathlib import Path as _Path
+    from django.conf import settings as _settings
+    from . import policy_lab
+
+    path = _Path(_settings.GALACTICA['RUNTIME_DIR']) / 'lab' / 'latest.json'
+    report, error = None, None
+    try:
+        report = json.loads(path.read_text())
+    except FileNotFoundError:
+        pass
+    except (OSError, json.JSONDecodeError) as exc:
+        error = str(exc)
+
+    panels = []
+    if report:
+        for section in report.get('panels', []):
+            cells = {(c['policy'], c['risk_class']): c for c in section.get('cells', [])}
+            rows = [
+                {
+                    'policy': policy,
+                    'cells': [cells.get((policy, risk)) for risk in policy_lab.RISK_CLASSES],
+                }
+                for policy in report.get('policies', [])
+            ]
+            panels.append({'section': section, 'rows': rows})
+    return render(request, 'core/lab.html', {
+        'report': report,
+        'panels': panels,
+        'error': error,
+        'risk_classes': policy_lab.RISK_CLASSES,
+        'report_path': str(path),
+    })
+
+
 # ----- Activity -------------------------------------------------------------------------------------
 
 def health(request):

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% block title %}Policy lab{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Evaluation</p>
+  <h1>Policy lab</h1>
+  <p class="lede">Simulated review panels scored against editorial policy. No model calls: every number comes from planted defects and reviewer catch rates.</p>
+</header>
+
+{% if error %}
+  <div class="flash flash-error">Could not read the report: {{ error }}</div>
+{% endif %}
+
+{% if not report %}
+  <div class="empty-state">
+    <h2>No report yet</h2>
+    <p>Run the lab to write one:</p>
+    <pre><code>.venv/bin/python manage.py run_policy_lab --trials 400 --seed 7</code></pre>
+    <p class="fine">Expected at <code>{{ report_path }}</code>.</p>
+  </div>
+{% else %}
+  <div class="card">
+    <p class="fine">
+      {{ report.generated_at }} · {{ report.trials_per_cell }} trials per cell · seed {{ report.seed }} ·
+      {{ report.scenarios }} scenarios · {{ report.policies|length }} policies
+    </p>
+    <p class="lede">
+      Each cell is a share of edits. <strong>Escape</strong> is a defective edit that reached readers;
+      <strong>human</strong> is reviews needed per 100 edits. A policy that publishes nothing scores 0% escape
+      and 100 human reviews per 100 edits.
+    </p>
+  </div>
+
+  {% for block in panels %}
+  <div class="card">
+    <h2>Panel: {{ block.section.panel }} <span class="badge">correlation {{ block.section.correlation }}</span></h2>
+    <p class="fine">{{ block.section.trials_per_cell }} trials per cell · run {{ block.section.fingerprint }}</p>
+    <div class="table-scroll">
+      <table class="data matrix lab-matrix">
+        <thead>
+          <tr>
+            <th>Policy</th>
+            {% for risk in risk_classes %}<th>{{ risk }}</th>{% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in block.rows %}
+          <tr>
+            <th scope="row"><code>{{ row.policy }}</code></th>
+            {% for cell in row.cells %}
+            <td>
+              {% if cell and cell.trials %}
+                <span class="lab-escape {% if cell.escape_rate > 0.02 %}lab-bad{% elif cell.escape_rate > 0 %}lab-warn{% else %}lab-good{% endif %}">
+                  {{ cell.escape_rate|floatformat:2 }} escape
+                </span>
+                <span class="fine">{{ cell.human_load_per_100|floatformat:0 }} human / 100</span>
+              {% else %}
+                <span class="fine">—</span>
+              {% endif %}
+            </td>
+            {% endfor %}
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="fine">
+      Cheapest zero-escape policy per class:
+      {% for risk, policy in block.section.recommended.items %}<code>{{ risk }}</code> → <code>{{ policy|default:"none" }}</code>{% if not forloop.last %} · {% endif %}{% endfor %}
+    </p>
+  </div>
+  {% endfor %}
+
+  <div class="card">
+    <h2>What this does and does not establish</h2>
+    <ul class="plain-list">
+      <li>It prices a policy trade-off. It does not measure whether a real reviewer catches a real defect.</li>
+      <li>Catch rates and correlation are assumptions. Change them and the ranking can change; that is the point.</li>
+      <li>The next step is replacing assumed catch rates with measured ones from recorded review runs.</li>
+    </ul>
+  </div>
+{% endif %}
+{% endblock %}

@@ -27,6 +27,7 @@ urlpatterns = [
     path('jobs/<uuid:pk>/cancel/', views.job_cancel, name='job_cancel'),
     path('jobs/<uuid:pk>/retry/', views.job_retry, name='job_retry'),
     path('evals/', views.evals, name='evals'),
+    path('lab/', views.lab_view, name='lab'),
     path('health/', views.health, name='health'),
     path('api/v1/articles/', api.articles, name='api_articles'),
     path('api/v1/articles/<slug:slug>/', api.article_detail, name='api_article'),
