@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Review queue{% endblock %}
+{% block content_class %}wide{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Human review</p>
+  <h1>Review queue</h1>
+  <p class="lede">What needs a human now. The queue is shared: nothing is auto-assigned, and a proposal is not
+    “owned” by the reviewer who opens it. Minimum before approval: {{ policy.min_reviews }} review{{ policy.min_reviews|pluralize }};
+    objections {% if policy.block_on_objection %}block approval{% else %}do not block approval{% endif %}.</p>
+</header>
+
+<section class="stats" aria-label="Queue summary">
+  <a class="stat" href="?state=submitted"><strong>{{ stats.submitted }}</strong><span>Waiting for first review</span></a>
+  <a class="stat" href="?state=under_review"><strong>{{ stats.under_review }}</strong><span>Under review</span></a>
+  <a class="stat" href="?state=approved"><strong>{{ stats.approved }}</strong><span>Approved, awaiting publish</span></a>
+  <a class="stat" href="?state=changes_requested"><strong>{{ stats.changes_requested }}</strong><span>Changes requested</span></a>
+  <a class="stat" href="?state=stale"><strong>{{ stats.stale }}</strong><span>Stale approvals</span></a>
+</section>
+
+<form class="filter-bar" method="get" role="search">
+  <label class="grow">Search<input type="search" name="q" value="{{ q }}" placeholder="Article title or rationale"></label>
+  <label>Queue
+    <select name="state">
+      {% for value, label in state_choices %}<option value="{{ value }}" {% if state_filter == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="btn btn-quiet" type="submit">Apply</button>
+</form>
+
+<p class="result-count">{{ rows|length }} proposal{{ rows|length|pluralize }} in this view</p>
+
+<div class="table-scroll">
+<table class="data review-queue">
+  <thead>
+    <tr><th>Article / proposal</th><th>State</th><th>Origin / author</th><th>Age</th><th>Coverage</th><th>Objections</th><th>Action</th></tr>
+  </thead>
+  <tbody>
+  {% for row in rows %}
+    <tr class="{% if row.stale %}stale-row{% endif %}">
+      <td>
+        <a href="{% url 'proposal' row.proposal.pk %}"><strong>{{ row.proposal.article.title }}</strong></a>
+        <br><span class="muted">{{ row.proposal.candidate.label }} against {{ row.proposal.base.label|default:"new article" }} · {{ row.proposal.id|slice:":8" }}</span>
+      </td>
+      <td>
+        <span class="badge badge-{{ row.state }}">{{ row.state_label }}</span>
+        <br><span class="muted small">{{ row.proposal.get_status_display }}</span>
+        {% if row.stale %}<br><span class="badge badge-stale">Stale base</span>{% endif %}
+      </td>
+      <td>
+        <span class="badge badge-{{ row.proposal.origin }}">{{ row.proposal.get_origin_display }}</span>
+        <br><span class="muted">{{ row.proposal.created_by.username|default:"runner/system" }}</span>
+        {% if row.proposal.agent %}<br><span class="muted">{{ row.proposal.agent.name }}</span>{% endif %}
+      </td>
+      <td>{{ row.proposal.created_at|timesince }}<br><span class="muted small">{{ row.proposal.created_at|date:"j M H:i" }}</span></td>
+      <td>
+        {{ row.review_count }} review{{ row.review_count|pluralize }} / {{ policy.min_reviews }} minimum
+        {% if row.covered %}<br><span class="muted small">Covered: {{ row.covered|join:", " }}</span>{% endif %}
+        {% if row.missing %}<br><span class="field-error small">Missing: {{ row.missing|join:", " }}</span>{% endif %}
+      </td>
+      <td>
+        {% for review in row.objections %}
+          <span class="badge badge-object">Object</span> <span class="muted small">{{ review.role }}</span><br>
+        {% empty %}
+          <span class="muted small">None recorded</span>
+        {% endfor %}
+      </td>
+      <td>
+        <a class="btn btn-small" href="{% url 'proposal' row.proposal.pk %}">Open diff</a>
+      </td>
+    </tr>
+  {% empty %}
+    <tr><td colspan="7" class="empty-inline">Nothing in this queue view. Open the queue filter or choose a different state.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<div class="grid-2">
+  <section class="card">
+    <h2>How to use this queue</h2>
+    <ul class="plain-list">
+      <li>Open the proposal, read the rationale, diff, claims and evidence, then use the human review form.</li>
+      <li>One review per role per proposal. A duplicate role is refused; use a different role only if you can judge it.</li>
+      <li>A review does not approve the proposal. Approval and publishing remain separate steward actions.</li>
+      <li>If the base changed, the proposal is stale; publishing is refused. Open a new draft instead.</li>
+      <li>Do not treat simulated or same-agent reviews as independent human judgment.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Your recent human reviews</h2>
+    {% for review in recent_reviews %}
+      <div class="row-item">
+        <a href="{% url 'proposal' review.proposal.pk %}">{{ review.proposal.article.title }}</a>
+        <span class="badge badge-{{ review.verdict }}">{{ review.get_verdict_display }}</span>
+        <span class="muted">· {{ review.role }} · {{ review.created_at|date:"j M H:i" }}</span>
+        {% if review.comment %}<p class="reason">{{ review.comment|truncatechars:180 }}</p>{% endif %}
+      </div>
+    {% empty %}
+      <div class="empty-inline">No human reviews recorded by you yet. Open a proposal from the queue to start.</div>
+    {% endfor %}
+  </section>
+</div>
+{% endblock %}

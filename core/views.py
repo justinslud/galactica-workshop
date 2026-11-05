@@ -1,9 +1,11 @@
 import json
 from functools import wraps
+from types import SimpleNamespace
 
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import User
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Count, Q
@@ -12,14 +14,15 @@ from django.http import Http404, HttpResponseBadRequest, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.utils import timezone
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from . import blocks as block_rules
+from . import authorization, blocks as block_rules
 from . import configs, editorial, jobs
 from .markup import render_block, word_diff_html
 from .models import (
-    Agent, AgentRun, Article, AuditEvent, Block, ConfigVersion, EvalCase, EvalResult, Job, Proposal, Review,
-    Revision, Source, SourceSnapshot,
+    Agent, AgentRun, Article, AuditEvent, Block, ConfigVersion, EvalCase, EvalResult, Job, Proposal,
+    Review, Revision, Source, SourceSnapshot, Topic, Watch,
 )
 from .editorial import EditorialError, PermissionDeniedError, ConflictError
 from .runners import RunnerError
@@ -113,7 +116,7 @@ def library(request):
     q = request.GET.get('q', '').strip()
     status = request.GET.get('status', 'all')
     provenance = request.GET.get('provenance', 'all')
-    arts = Article.objects.select_related('published').annotate(
+    arts = Article.objects.select_related('published', 'topic').annotate(
         open_proposals=Count('proposals', filter=Q(proposals__status__in=['pending', 'approved', 'revision_requested']))
     )
     if q:
@@ -132,6 +135,111 @@ def library(request):
         'status_choices': [('all', 'All'), ('published', 'Published'), ('unpublished', 'Not published'),
                            ('pending', 'Has open proposals')],
     })
+
+
+# ----- Topics, bylines and the return loop ---------------------------------------------------------
+
+def topics(request):
+    rows = Topic.objects.annotate(
+        article_count=Count('articles', filter=Q(articles__published__isnull=False))
+    ).order_by('title')
+    return render(request, 'core/topics.html', {'topics': rows})
+
+
+def topic(request, slug):
+    topic_row = get_object_or_404(Topic.objects.select_related('parent'), slug=slug)
+    articles = topic_row.articles.filter(published__isnull=False).select_related('published').order_by('title')
+    return render(request, 'core/topic.html', {
+        'topic': topic_row,
+        'articles': articles,
+        'children': topic_row.children.order_by('title'),
+        'parent': topic_row.parent,
+    })
+
+
+def contributor(request, username):
+    person = get_object_or_404(User, username=username)
+    revisions = list(
+        Revision.objects.filter(created_by=person, state__in=('published', 'superseded'))
+        .select_related('article', 'article__published')
+        .order_by('-published_at', '-created_at')
+    )
+    published_proposals = list(
+        Proposal.objects.filter(created_by=person, status='published')
+        .select_related('article').order_by('-decided_at')
+    )
+    is_self_or_staff = request.user.is_authenticated and (request.user == person or request.user.is_staff)
+    if not revisions and not published_proposals and not is_self_or_staff:
+        raise Http404()
+    current_revisions = [revision for revision in revisions if revision.article.published_id == revision.pk]
+    current_ids = {revision.pk for revision in current_revisions}
+    past_revisions = [revision for revision in revisions if revision.pk not in current_ids]
+    return render(request, 'core/contributor.html', {
+        'contributor': person,
+        'current_revisions': current_revisions,
+        'past_revisions': past_revisions,
+        'published_proposals': published_proposals,
+        'revision_count': len(revisions),
+        'article_count': len({revision.article_id for revision in revisions}),
+    })
+
+
+@login_required
+def watchlist(request):
+    rows = []
+    watches = list(
+        Watch.objects.filter(user=request.user)
+        .select_related('article', 'article__published').order_by('-created_at')
+    )
+    for watch in watches:
+        events = watch.article.publication_events.select_related('revision', 'published_by')
+        latest_event = events.order_by('-sequence').first()
+        if watch.last_seen_at:
+            new_count = events.filter(published_at__gt=watch.last_seen_at).count()
+        else:
+            new_count = events.count()
+        rows.append(SimpleNamespace(
+            watch=watch,
+            article=watch.article,
+            latest_event=latest_event,
+            new_count=new_count,
+        ))
+    return render(request, 'core/watchlist.html', {'rows': rows})
+
+
+@login_required
+@require_POST
+def article_watch(request, slug):
+    article = get_object_or_404(Article, slug=slug)
+    watch, created = Watch.objects.get_or_create(
+        user=request.user, article=article, defaults={'last_seen_at': timezone.now()},
+    )
+    if created:
+        messages.success(request, f'Watching "{article.title}". Changes will appear in your watchlist; no email is sent.')
+    else:
+        watch.delete()
+        messages.info(request, f'Stopped watching "{article.title}".')
+    next_url = request.POST.get('next') or reverse('article', args=[slug])
+    if not url_has_allowed_host_and_scheme(next_url, allowed_hosts={request.get_host()},
+                                           require_https=request.is_secure()):
+        next_url = reverse('article', args=[slug])
+    return redirect(next_url)
+
+
+@login_required
+@require_POST
+def watchlist_seen(request):
+    now = timezone.now()
+    article_id = request.POST.get('article')
+    watches = Watch.objects.filter(user=request.user)
+    if article_id:
+        try:
+            watches = watches.filter(article_id=int(article_id))
+        except (TypeError, ValueError):
+            watches = watches.none()
+    updated = watches.update(last_seen_at=now)
+    messages.success(request, f'Marked {updated} watched article{"" if updated == 1 else "s"} as seen.')
+    return redirect('watchlist')
 
 
 class NewArticleForm(forms.Form):
@@ -161,7 +269,7 @@ def article_new(request):
 # ----- Article reading -----------------------------------------------------------------------------
 
 def article_detail(request, slug):
-    article = get_object_or_404(Article.objects.select_related('published'), slug=slug)
+    article = get_object_or_404(Article.objects.select_related('published', 'topic'), slug=slug)
     rev_number = request.GET.get('rev')
     show_draft = request.GET.get('draft') == '1' and request.user.is_authenticated
     revision = article.published
@@ -177,13 +285,23 @@ def article_detail(request, slug):
         draft = article.revisions.filter(state='draft').first()
         if draft is not None:
             revision = draft
+    is_watching = request.user.is_authenticated and Watch.objects.filter(
+        user=request.user, article=article).exists()
     if revision is None and draft is None:
-        return render(request, 'core/article.html', {'article': article, 'revision': None, 'items': [],
-                                                     'open_proposals': [], 'viewing_old': False, 'draft': None,
-                                                     'draft_banner': False})
+        return render(request, 'core/article.html', {
+            'article': article, 'revision': None, 'items': [],
+            'open_proposals': [], 'viewing_old': False, 'draft': None,
+            'draft_banner': False, 'topic': article.topic, 'byline_user': None,
+            'publication_event': None, 'is_watching': is_watching,
+        })
     open_proposals = []
     if request.user.is_authenticated:
         open_proposals = article.proposals.filter(status__in=['pending', 'approved', 'revision_requested']).select_related('base')
+    publication_event = None
+    byline_user = None
+    if revision.state in ('published', 'superseded'):
+        publication_event = revision.publication_events.select_related('published_by').order_by('-sequence').first()
+        byline_user = revision.created_by
     return render(request, 'core/article.html', {
         'article': article,
         'revision': revision,
@@ -192,6 +310,10 @@ def article_detail(request, slug):
         'draft_banner': revision is not None and revision.state == 'draft',
         'open_proposals': open_proposals,
         'draft': draft,
+        'topic': article.topic,
+        'byline_user': byline_user,
+        'publication_event': publication_event,
+        'is_watching': is_watching,
     })
 
 
@@ -200,8 +322,11 @@ def article_history(request, slug):
     article = get_object_or_404(Article.objects.select_related('published'), slug=slug)
     revisions = article.revisions.select_related('created_by', 'reverts').all()
     events = article.audit_events.select_related('actor', 'revision', 'proposal').all()[:60]
+    publication_events = article.publication_events.select_related(
+        'revision', 'published_by', 'previous_revision').order_by('sequence')
     return render(request, 'core/history.html', {
         'article': article, 'revisions': revisions, 'events': events,
+        'publication_events': publication_events,
     })
 
 
@@ -362,6 +487,79 @@ def proposals(request):
     })
 
 
+@login_required
+def review_dashboard(request):
+    """The human queue. This is a view over authorization, not a second permission system."""
+    gate = authorization.can(request.user, authorization.CAP_VIEW_QUEUE)
+    if not gate.allowed:
+        raise PermissionDenied(gate.message)
+
+    state_filter = request.GET.get('state', 'open')
+    q = request.GET.get('q', '').strip()
+    qs = (
+        Proposal.objects.exclude(origin='evaluation')
+        .select_related('article', 'article__published', 'base', 'candidate', 'created_by', 'decided_by', 'agent')
+        .prefetch_related('reviews')
+    )
+    if q:
+        qs = qs.filter(Q(article__title__icontains=q) | Q(rationale__icontains=q))
+    all_rows = []
+    roles = configs.REVIEW_ROLES
+    for proposal in qs:
+        reviews = list(proposal.reviews.all())
+        covered = {review.role for review in reviews}
+        missing = [(key, label) for key, label, _instructions in roles if key not in covered]
+        all_rows.append(SimpleNamespace(
+            proposal=proposal,
+            state=authorization.proposal_state(proposal),
+            state_label=authorization.state_label(proposal),
+            review_count=len(reviews),
+            covered=[label for key, label, _instructions in roles if key in covered],
+            missing=[label for _key, label in missing],
+            objections=[review for review in reviews if review.verdict == 'object'],
+            stale=proposal.is_stale,
+        ))
+
+    stats = {
+        'submitted': sum(1 for row in all_rows if row.state == 'submitted'),
+        'under_review': sum(1 for row in all_rows if row.state == 'under_review'),
+        'approved': sum(1 for row in all_rows if row.state == 'approved' and not row.stale),
+        'changes_requested': sum(1 for row in all_rows if row.state == 'changes_requested'),
+        'stale': sum(1 for row in all_rows if row.stale and row.state == 'approved'),
+    }
+    if state_filter == 'open':
+        rows = [row for row in all_rows if row.state in ('submitted', 'under_review', 'approved')]
+    elif state_filter == 'all':
+        rows = all_rows
+    elif state_filter == 'stale':
+        rows = [row for row in all_rows if row.stale]
+    else:
+        rows = [row for row in all_rows if row.state == state_filter]
+
+    recent_reviews = (
+        Review.objects.filter(reviewer=request.user, origin='human')
+        .select_related('proposal__article').order_by('-created_at')[:10]
+    )
+    return render(request, 'core/review_dashboard.html', {
+        'rows': rows,
+        'stats': stats,
+        'state_filter': state_filter,
+        'q': q,
+        'policy': configs.active_policy(),
+        'roles': roles,
+        'recent_reviews': recent_reviews,
+        'state_choices': [
+            ('open', 'Open queue'),
+            ('submitted', 'Submitted'),
+            ('under_review', 'Under review'),
+            ('approved', 'Approved / awaiting publish'),
+            ('changes_requested', 'Changes requested'),
+            ('stale', 'Stale'),
+            ('all', 'All'),
+        ],
+    })
+
+
 def _review_rows(proposal):
     roles = {key: label for key, label, _ in configs.REVIEW_ROLES}
     rows = []
@@ -400,6 +598,19 @@ def proposal_detail(request, pk):
     reviewer_count = len(reviews)
     roles_available = configs.REVIEW_ROLES
     reviews_list = list(proposal.reviews.all())
+    used_roles = {review.role for review in reviews_list}
+    review_roles = []
+    for key, label, _instructions in roles_available:
+        if key in used_roles:
+            continue
+        if authorization.can(request.user, 'review', proposal=proposal, role=key).allowed:
+            review_roles.append((key, label))
+    workflow_state = authorization.proposal_state(proposal)
+    can_decide = authorization.can(request.user, 'approve', proposal=proposal).allowed
+    can_publish = (
+        proposal.status == 'approved' and not proposal.is_stale and proposal.origin != 'evaluation'
+        and authorization.can(request.user, 'publish', proposal=proposal).allowed
+    )
     claim_rows = []
     for claim in proposal.candidate.claims.prefetch_related('citations__source'):
         citations = []
@@ -424,13 +635,39 @@ def proposal_detail(request, pk):
         'claim_rows': claim_rows,
         'outcome': editorial.panel_outcome(list(proposal.reviews.all()), policy),
         'policy': policy,
-        'can_publish': proposal.status == 'approved' and not proposal.is_stale and proposal.origin != 'evaluation',
+        'can_publish': can_publish,
+        'can_decide': can_decide,
+        'can_review': bool(review_roles),
+        'review_roles': review_roles,
+        'workflow_state': workflow_state,
+        'workflow_label': authorization.state_label(proposal),
         'open_for_decision': open_for_decision,
         'reviewer_count': reviewer_count,
         'roles_available': roles_available,
         'selection_form': _selection_context(),
         'jobs': proposal.jobs.order_by('-created_at')[:5],
     })
+
+
+@login_required
+@require_POST
+def proposal_review(request, pk):
+    proposal = get_object_or_404(Proposal, pk=pk)
+    try:
+        editorial.record_review(
+            proposal,
+            role=request.POST.get('role', ''),
+            verdict=request.POST.get('verdict', ''),
+            comment=request.POST.get('comment', ''),
+            evidence_notes=request.POST.get('evidence_notes', ''),
+            origin='human',
+            operator=request.user,
+        )
+    except (EditorialError, block_rules.ValidationError) as exc:
+        _flash_error(request, exc)
+    else:
+        messages.success(request, 'Review recorded. The proposal stays open until a steward decides.')
+    return redirect('proposal', pk=pk)
 
 
 @staff_required

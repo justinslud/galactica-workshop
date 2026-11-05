@@ -63,6 +63,7 @@ def revision_payload(revision):
 def article_payload(article):
     return {
         'id': str(article.id), 'slug': article.slug, 'title': article.title, 'opening': article.opening,
+        'topic': ({'slug': article.topic.slug, 'title': article.topic.title} if article.topic else None),
         'provenance': article.provenance, 'updated_at': article.updated_at.isoformat(),
         'published_revision': (revision_payload(article.published) if article.published else None),
         'revision_count': article.revisions.count(),
@@ -80,8 +81,10 @@ def proposal_payload(proposal):
         'candidate': revision_payload(proposal.candidate),
         'reviews': [
             {'role': r.role, 'verdict': r.verdict, 'comment': r.comment, 'evidence_notes': r.evidence_notes,
-             'origin': r.origin, 'declared_model': r.declared_model, 'agent': r.agent.name if r.agent else None}
-            for r in proposal.reviews.select_related('agent')
+             'origin': r.origin, 'declared_model': r.declared_model,
+             'reviewer': r.reviewer.username if r.reviewer else None,
+             'agent': r.agent.name if r.agent else None}
+            for r in proposal.reviews.select_related('agent', 'reviewer')
         ],
         'jobs': [str(j.pk) for j in proposal.jobs.all()],
     }
@@ -121,13 +124,13 @@ def _api_view(scope):
 
 @_api_view('read')
 def articles(request):
-    items = Article.objects.select_related('published').all()
+    items = Article.objects.select_related('published', 'topic').all()
     return JsonResponse({'articles': [article_payload(a) for a in items]})
 
 
 @_api_view('read')
 def article_detail(request, slug):
-    article = get_object_or_404(Article.objects.select_related('published'), slug=slug)
+    article = get_object_or_404(Article.objects.select_related('published', 'topic'), slug=slug)
     data = article_payload(article)
     data['open_proposals'] = [
         {'id': str(p.id), 'status': p.status, 'origin': p.origin, 'is_stale': p.is_stale}

@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% block title %}{{ topic.title }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">{% if parent %}<a href="{% url 'topic' parent.slug %}">{{ parent.title }}</a> · {% endif %}Topic</p>
+  <h1>{{ topic.title }}</h1>
+  {% if topic.scope_statement %}<p class="lede">{{ topic.scope_statement }}</p>{% endif %}
+  <p class="meta-line">
+    <span class="badge badge-published">{{ articles|length }} published article{{ articles|length|pluralize }}</span>
+    {% if topic.is_ambiguous %}<span class="badge badge-warn">Scope is contested</span>{% endif %}
+    {% if parent %}<span class="muted">Part of <a href="{% url 'topic' parent.slug %}">{{ parent.title }}</a></span>{% endif %}
+  </p>
+</header>
+
+{% if children %}
+<section class="card">
+  <h2>Subtopics</h2>
+  <ul class="plain-list">
+    {% for c in children %}
+    <li>
+      <a href="{% url 'topic' c.slug %}">{{ c.title }}</a>
+      {% if c.is_ambiguous %}<span class="badge badge-warn">Ambiguous scope</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<div class="article-list">
+  {% for a in articles %}
+  <article class="article-card">
+    <div>
+      <h2><a href="{% url 'article' a.slug %}">{{ a.title }}</a></h2>
+      <p class="opening-snip">{{ a.opening|truncatechars:180 }}</p>
+      <p class="meta-line">
+        {% if a.published %}<span class="badge badge-published">{{ a.published.label }} published</span>{% endif %}
+        <span class="muted">Updated {{ a.updated_at|date:"j M Y" }}</span>
+      </p>
+    </div>
+    <a class="btn btn-small btn-quiet" href="{% url 'article' a.slug %}">Read</a>
+  </article>
+  {% empty %}
+  <div class="empty-state">
+    <h2>No published articles in this topic yet</h2>
+    <p>The topic exists, but nothing in it has passed publication yet. Reading counts include published articles only.</p>
+    <a class="btn btn-primary" href="{% url 'library' %}">Browse the library</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

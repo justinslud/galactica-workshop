@@ -1,0 +1,31 @@
+{% extends 'base.html' %}
+{% block title %}Topics{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Topics</p>
+  <h1>Browse by topic</h1>
+  <p class="lede">Subject areas the workshop covers. Each topic lists only its published articles, so these counts are reading counts, not drafts.</p>
+</header>
+
+<div class="article-list">
+  {% for t in topics %}
+  <article class="article-card">
+    <div>
+      <h2><a href="{% url 'topic' t.slug %}">{{ t.title }}</a>{% if t.is_ambiguous %} <span class="badge badge-warn">Ambiguous scope</span>{% endif %}</h2>
+      {% if t.scope_statement %}<p class="opening-snip">{{ t.scope_statement|truncatechars:220 }}</p>{% endif %}
+      <p class="meta-line">
+        <span class="badge">{{ t.article_count }} published article{{ t.article_count|pluralize }}</span>
+        {% if t.parent %}<span class="muted">Part of <a href="{% url 'topic' t.parent.slug %}">{{ t.parent.title }}</a></span>{% endif %}
+      </p>
+    </div>
+    <a class="btn btn-small btn-quiet" href="{% url 'topic' t.slug %}">Open</a>
+  </article>
+  {% empty %}
+  <div class="empty-state">
+    <h2>No topics yet</h2>
+    <p>Topics group articles by subject. They appear here once the workshop has one, and a topic with no published articles still opens.</p>
+    <a class="btn btn-primary" href="{% url 'library' %}">Browse the library</a>
+  </div>
+  {% endfor %}
+</div>
+{% endblock %}

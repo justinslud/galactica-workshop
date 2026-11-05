@@ -45,6 +45,32 @@
 </section>
 
 <section class="card">
+  <h2>Publication log</h2>
+  <p class="help">Append-only: each publication or revert adds a row here. Earlier rows are never rewritten, so "what was published on a given date" stays answerable.</p>
+  <div class="table-scroll">
+  <table class="data pub-log">
+    <thead><tr><th>#</th><th>When</th><th>Kind</th><th>Revision</th><th>Previous</th><th>Published by</th><th>Policy</th><th>Reason</th></tr></thead>
+    <tbody>
+    {% for e in publication_events %}
+      <tr>
+        <td>{{ e.sequence }}</td>
+        <td>{{ e.published_at|date:"j M Y H:i"|default:"—" }}</td>
+        <td><span class="badge badge-{{ e.kind }}">{{ e.get_kind_display|default:e.kind }}</span></td>
+        <td>{% if e.revision %}<a href="{% url 'article' article.slug %}?rev={{ e.revision.number }}">{{ e.revision.label }}</a><br><span class="muted">{{ e.revision.title|truncatechars:60 }}</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td>{{ e.previous_revision.label|default:"—" }}</td>
+        <td>{{ e.published_by.username|default:"system" }}</td>
+        <td>{% if e.policy_version %}<code class="small">{{ e.policy_version }}</code>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="reason-cell">{{ e.reason|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="8" class="empty-inline">No publication events recorded yet. A publication or revert will add the first row.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
   <h2>Activity</h2>
   <ol class="timeline-list">
     {% for e in events %}

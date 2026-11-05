@@ -6,6 +6,19 @@ articles and an inspectable editorial process. This is a **local-only Django app
 All three seeded articles are **demonstration drafts**, not verified reference articles. Reviews and edits produced by
 the offline runner are labelled **SIMULATED** everywhere.
 
+## Product specification and planning documents
+
+The expanded product specification, decision register, worked examples, experiment backlog and launch plan live in
+[`docs/`](docs/README.md). Start with the [briefing](docs/BRIEFING.md), then the [current-state and gap
+assessment](docs/00-CURRENT-STATE.md) and the [product specification](docs/PRODUCT-SPEC.md). The specification is a
+proposal for review, not accepted policy; the earlier decision record in `~/projects/galactica` is preserved.
+
+A partial M0 slice is implemented: append-only publication history, a minimal Topic model and pages, a public
+byline/credit page, and an opt-in web watchlist. A second slice adds capability/trust profiles, deterministic
+proposal states, rolling quotas, self-review/self-decision guards, a `/review/` human queue and a human review
+form. See [CURRENT.md](CURRENT.md) for the exact scope and what remains open. The publication policy minimums,
+agent publish boundary and write API are unchanged.
+
 ## Repository
 
 Private remote: <https://github.com/justinslud/galactica-workshop> (local `main` tracks `origin/main`).

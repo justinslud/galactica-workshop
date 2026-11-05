@@ -1,6 +1,7 @@
 # CURRENT — Galactica Workshop
 
-**Updated:** 2026-11-04 (latest pass: policy lab v1)
+**Updated:** 2026-11-05 (latest pass: authorization/state-machine/human-review-dashboard slice, implemented and
+verified; previous: M0 publication/topic/watch slice, then extended product specification, proposal)
 **Location:** `/home/justin/projects/galactica-workshop` (separate Django app; the TypeScript project at
 `/home/justin/projects/galactica` is untouched)
 
@@ -10,9 +11,118 @@ Build the first usable local Galactica workshop: editable, versioned articles; p
 reviews; human publication, correction and revert; configurable runner/reviewer/policy versions; background jobs; and
 repeatable editorial test cases. Django + SQLite, localhost only, no Docker/Redis/SPA.
 
-## Latest pass — 2026-11-04: policy lab v1 (simulated)
+## Latest pass — 2026-11-05: authorization, state machine and human review dashboard (implemented, verified)
+
+**Objective:** replace scattered `is_staff` checks with one deterministic evaluator for capabilities, editorial
+states, transitions, relationship guards and quotas, and give humans a single queue for what needs review — without
+changing the publication policy minimums, the identity model or the agent publish boundary.
+
+**Implemented (workshop code):**
+- `core/authorization.py` — capability/trust table (`new`/`standard`/`trusted`/`steward`), derived proposal states
+  (`submitted`, `under_review`, `approved`, `published`, `rejected`, `changes_requested`), one `can()`
+  evaluator with explicit reason codes, rolling 24-hour quotas, self-review/self-decision/self-publication guards,
+  evaluation refusal, and agent-scope checks.
+- `ContributorProfile` (staff default `steward`, other accounts default `standard`; admin-editable; a capability
+  tier, not identity verification) and a `Review.reviewer` user FK; migration
+  `0009_contributor_profiles_reviewer`.
+- Services now enforce authorization in `open_proposal`, `submit_draft`, `save_draft`/`ensure_draft`,
+  `record_review`, `decide`, `publish` and `revert`; the human review form records `origin=human` and the reviewer.
+- `/review/` human queue (standard/trusted/steward; anonymous redirects to login, `new` denied) with state filters,
+  counters, review coverage, objections, stale flags and no auto-assignment; nav link; a human review form on the
+  proposal page.
+- Quotas (starting parameters, not measured): `new` 1 proposal/day and 0 human reviews; `standard` 5/10; `trusted`
+  10/25; steward unlimited; rolling 24 hours; human reviews counted only with `origin=human`.
+- Same-agent reviews are allowed in v1 but recorded in the audit detail as `same_agent: true` and are **not
+  independent evidence**.
+
+**Verification:** `manage.py test` → **171 tests pass** (was 154; 17 new in
+`core/tests/test_authorization_dashboard.py`); `manage.py check` clean; `makemigrations --check` clean. Migration
+`0009` was applied to the local DB (gitignored). No browser-level check was made; the queue and form are
+test-verified only. Design note: `docs/AUTHORIZATION-STATE-MACHINE.md`.
+
+**Not implemented in this slice:** auto-assignment/claiming, automatic trust promotion, an external policy engine,
+the `withdrawn` state, appeal/dispute state machines, a trust-management UI beyond Django admin, per-reviewer
+calibration, and identity verification or a reputation score.
+
+**Limits:** the evaluator is a small, readable transition table, not a full policy engine; the quota numbers are
+starting parameters, not calibration results; same-agent reviews are non-independent; the `created_by` authorship
+test is conservative but incomplete. The publication policy minimums (D-19) and the identity direction (D-23) are
+unchanged. No rename, no deployment, no production data change, no credentials.
+
+**Next:** run E2/E3 to calibrate quotas and reviewer value (excluding same-agent reviews), then decide trust-promotion
+rules; keep the human gate.
+
+## Earlier pass — 2026-11-04: M0 publication/topic/watch slice (implemented, verified)
+
+**Objective:** implement the first M0 slice from the extended specification — durable publication history, a
+minimal topic object, and the start of the return loop — without changing the editorial gate, the API, quotas or
+the project name.
+
+**Implemented (workshop code):**
+- `PublicationEvent` (append-only): per-article `sequence`; kinds `initial`/`publish`/`revert`/`import`;
+  `published_at`/`published_by`, `previous_revision`, `policy_version`, `decision`, `reason`, `content_hash`
+  (title/opening/blocks/claims/citations, now including claim-level structure and stance/strength);
+  unique `(article, sequence)` and `(article, revision)`; event→article FK is `PROTECT`, so deleting an article
+  cannot cascade-delete its history. `Article.published` is now a cache, not the history.
+  `_record_publication` appends events from `publish()`, `revert()` and `create_published_revision()`.
+- Minimal `Topic` (slug, title, scope statement, parent, disambiguation flag, `created_by`) and an `Article.topic`
+  FK; 3 demonstration topics seeded and attached to the existing demo articles; `/topics/` and `/topics/<slug>/`
+  list published articles only.
+- Opt-in `Watch` (unique per user+article, `last_seen_at`); login-only `/watchlist/` with a **web-only digest, no
+  email**; `POST /article/<slug>/watch/` toggle and `POST /watchlist/seen/` (one row or all).
+- Reader surfaces: `/contributors/<username>/` public credit page (no private data), article-page
+  byline/topic/provenance/watch block, and the history-page publication log.
+- Migrations `0006_m0_publication_topics_watch`, `0007_backfill_publication_events` (backfilled 6 existing
+  publication events on the local DB) and `0008_publication_event_protect_article` (protects history from article
+  deletion).
+
+**Verification:** `manage.py test` → **154 tests pass** (was 133; 21 new in
+`core/tests/test_m0_publication_topic_watch.py`); `manage.py check` clean; `makemigrations --check` clean.
+Migrations were applied to the local DB (gitignored). No browser-level check was made, so the new pages are
+verified through the Django test client and checks rather than observed in a browser.
+
+**Not implemented in this slice — do not read as done:** stable permalink/claim resolver, license/attribution
+fields, SQLite backup/restore drill, FTS5, `Idempotency-Key`/`If-Match` (M0 remainder); correction intake, review
+tiers, full `Topic` scope/coverage (M1); a designed public (anonymous) full-history page, email digest, and the
+`View`/`Assertion` objects (later). This is a partial M0, not a launch product; the editorial gate, review roles,
+quotas and API are unchanged. No rename, no deployment, no production data change, no credentials.
+
+**Next:** finish the remaining M0 items (permalink + claim resolver, license fields, backup/restore drill, FTS5,
+idempotency), then run E1/E4 per the briefing. Do not start M1 review tiers or correction intake before the
+reader-task and correction-triage experiments.
+
+## Earlier pass — 2026-11-04: extended product specification (proposal, no code change)
+
+**Objective:** use the existing work, targeted external research and a critique pass to substantially extend the
+product specification and launch plan — not to build another MVP.
+
+**What changed:** added `docs/` with a current-state/gap assessment, an expanded product specification (v2.2), a
+40-entry decision register with authority routes, worked examples (cardboard; invention of the telephone; a
+hypothetical company/living person), a 15-item experiment backlog, a staged launch plan, a briefing, a change record
+and three labelled research notes. `README.md` points to the new index. No application code, database, runtime,
+deployment or name was changed; the earlier decision record in `~/projects/galactica` is preserved.
+
+**Key findings that changed recommendations:** readers want clarity first and rarely click citations (0.29% of page
+views); showing raw process can lower measured quality judgements; review capacity is the binding constraint and
+review value decays with delay; a permalink is not a reproduction, so derived views need a manifest; publication
+history needs an append-only event, not the mutable `Article.published` pointer. Two independent critiques are
+preserved in `docs/critique/`; the revision narrows the public launch to **5–8 topics in one citation-costly
+wedge**, tiers the review minimum, cuts new-account quotas to 1–2/day, moves the full `Assertion`/`View` objects
+later (claim_key and revision-content views first), adds byline/watchlist, and replaces vanity metrics with four
+primary metrics.
+
+**Verification:** `manage.py test core` → 133 tests pass, system check clean (run 2026-11-04). The web server and
+worker were not running during this pass; no browser-level verification was repeated. External claims are in
+`docs/research/` with URLs and evidence labels; the policy lab's catch rates remain assumptions.
+
+**Next:** read `docs/BRIEFING.md`; implement `PublicationEvent` + `Topic` first (done in the M0 pass above); run
+reader-task and correction-triage experiments before expanding the surface; keep the human gate until measured
+catch rates justify otherwise.
+
+## Earlier pass — 2026-11-04: policy lab v1 (simulated)
 
 **Objective:** make the autonomy question measurable instead of argued.
+
 
 ### Implemented
 

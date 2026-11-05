@@ -10,11 +10,14 @@ import hashlib
 import json
 
 from django.db import IntegrityError, transaction
+from django.db.models import Max
 from django.utils import timezone
 from django.utils.text import slugify
 
-from . import blocks as block_rules
-from .models import Article, AuditEvent, Block, Citation, Claim, EvalCase, Proposal, Review, Revision, Source
+from . import authorization, blocks as block_rules
+from .models import (
+    Article, AuditEvent, Block, Citation, Claim, EvalCase, Proposal, PublicationEvent, Review, Revision, Source,
+)
 
 
 class EditorialError(Exception):
@@ -61,6 +64,19 @@ def _audit(article, action, *, actor=None, agent=None, agent_run=None, model='',
     )
 
 
+_STATE_DENIAL_CODES = {'wrong_state', 'already_reviewed', 'stale', 'evaluation', 'unknown_role', 'quota_exceeded'}
+
+
+def _authorize(actor, action, obj=None, *, proposal=None, role=None, agent=None):
+    """Apply the single authorization table. Permissions become 403s; state/quota failures become editorial errors."""
+    decision = authorization.can(actor, action, obj, proposal=proposal, role=role, agent=agent)
+    if decision.allowed:
+        return decision
+    if decision.code in _STATE_DENIAL_CODES:
+        raise EditorialError(decision.message)
+    raise PermissionDeniedError(decision.message)
+
+
 def next_number(article):
     last = article.revisions.order_by('-number').values_list('number', flat=True).first()
     return (last or 0) + 1
@@ -76,13 +92,54 @@ def content_hash(revision):
         ],
         'citations': sorted(
             [
-                {'block_id': str(c.block_id), 'source': str(c.source_id), 'supports': c.supports, 'quote': c.quote}
+                {'block_id': str(c.block_id), 'source': str(c.source_id), 'supports': c.supports, 'quote': c.quote,
+                 'stance': c.stance, 'strength': c.strength}
                 for c in revision.citations.all()
+            ],
+            key=lambda c: json.dumps(c, sort_keys=True),
+        ),
+        'claims': sorted(
+            [
+                {
+                    'block_id': str(claim.block_id), 'position': claim.position, 'text': claim.text,
+                    'start': claim.start, 'end': claim.end,
+                    'citations': sorted(
+                        [
+                            {'source': str(c.source_id), 'supports': c.supports, 'quote': c.quote,
+                             'stance': c.stance, 'strength': c.strength}
+                            for c in claim.citations.all()
+                        ],
+                        key=lambda c: json.dumps(c, sort_keys=True),
+                    ),
+                }
+                for claim in revision.claims.prefetch_related('citations')
             ],
             key=lambda c: json.dumps(c, sort_keys=True),
         ),
     }
     return hashlib.sha256(json.dumps(snapshot, sort_keys=True).encode()).hexdigest()
+
+
+def _policy_version_label():
+    """Identify the policy active at publication without making the event depend on a mutable row."""
+    from .configs import default_version
+    version = default_version('policy')
+    return f'{version.family}:v{version.version}' if version else ''
+
+
+def _record_publication(article, revision, *, kind, user, previous, reason='', policy_version='', decision=''):
+    """Append the durable publication row. Caller must hold the article lock and be in a transaction."""
+    digest = revision.content_hash or content_hash(revision)
+    if not revision.content_hash:
+        revision.content_hash = digest
+        revision.save(update_fields=['content_hash'])
+    last = PublicationEvent.objects.filter(article=article).aggregate(Max('sequence'))['sequence__max'] or 0
+    return PublicationEvent.objects.create(
+        article=article, revision=revision, sequence=last + 1, kind=kind,
+        published_at=revision.published_at or timezone.now(), published_by=_actor(user), previous_revision=previous,
+        policy_version=policy_version[:160], decision=decision[:40], reason=(reason or '')[:2000],
+        content_hash=digest,
+    )
 
 
 def _write_content(revision, items, citations):
@@ -263,6 +320,7 @@ def ensure_draft(article, user):
     article.refresh_from_db()
     existing = article.revisions.filter(state='draft').first()
     if existing:
+        _authorize(user, 'edit_draft', existing)
         return existing
     try:
         with transaction.atomic():
@@ -302,8 +360,7 @@ def save_draft(draft, user, *, title, opening, items, citations, expected_versio
     """Save the open draft. items/citations come from the editor payload and are validated here."""
     require_login(user)
     draft = Revision.objects.select_for_update().get(pk=draft.pk)
-    if draft.state != 'draft':
-        raise EditorialError('This revision is no longer an editable draft.')
+    _authorize(user, 'edit_draft', draft)
     if int(expected_version) != draft.version:
         raise ConflictError(
             'Someone saved this draft after you opened it. Reload the editor to see the latest '
@@ -329,6 +386,10 @@ def open_proposal(revision, *, rationale, origin, user=None, eval_case=None, age
     rationale = (rationale or '').strip()
     if not 20 <= len(rationale) <= 2000:
         raise block_rules.ValidationError('Rationale must be 20 to 2000 characters, explaining why the change helps readers.')
+    if agent is not None:
+        _authorize(None, 'propose', agent=agent)
+    elif user is not None:
+        _authorize(user, 'propose')
     base = article.published
     if revision.state not in ('draft', 'proposed'):
         raise EditorialError('Only a draft or candidate can become a proposal.')
@@ -379,6 +440,7 @@ def create_candidate(article, *, title, opening, items, citations, origin, user=
 def submit_draft(draft, user, rationale):
     require_login(user)
     draft = Revision.objects.select_for_update().get(pk=draft.pk)
+    _authorize(user, 'edit_draft', draft)
     if draft.state != 'draft':
         raise EditorialError('Only the open draft can be submitted.')
     return open_proposal(draft, rationale=rationale, origin='human', user=user)
@@ -392,19 +454,24 @@ def record_review(proposal, *, role, verdict, comment, evidence_notes='', origin
         raise EditorialError('Reviews can only be added while a proposal awaits a decision.')
     if verdict not in dict(Review.VERDICTS):
         raise block_rules.ValidationError('Unknown verdict.')
+    if agent is not None:
+        _authorize(None, 'review', proposal=proposal, role=role, agent=agent)
+    elif operator is not None:
+        _authorize(operator, 'review', proposal=proposal, role=role)
     try:
         with transaction.atomic():
             review = Review.objects.create(
                 proposal=proposal, role=role, verdict=verdict, comment=comment[:1200],
                 evidence_notes=evidence_notes[:1200], origin=origin, declared_model=declared_model[:120], job=job,
-                agent=agent, agent_run=agent_run, claim_verdicts=claim_verdicts or {},
+                reviewer=_actor(operator), agent=agent, agent_run=agent_run, claim_verdicts=claim_verdicts or {},
             )
     except IntegrityError:
         raise ConflictError(f'The {role} reviewer already reviewed this proposal.')
     _audit(
         proposal.article, 'review_recorded', revision=proposal.candidate, proposal=proposal, job=job,
         actor=operator, agent=agent, agent_run=agent_run, model=declared_model,
-        detail={'role': role, 'verdict': verdict, 'origin': origin},
+        detail={'role': role, 'verdict': verdict, 'origin': origin,
+                'same_agent': bool(agent and proposal.agent_id == agent.pk)},
     )
     return review
 
@@ -443,6 +510,8 @@ def decide(proposal, user, decision, note=''):
         raise EditorialError(f'This proposal is already {proposal.get_status_display().lower()}.')
     if decision in ('reject', 'request_revision') and not note:
         raise block_rules.ValidationError('Give a short reason so the author knows what to change.')
+    action_name = 'request_changes' if decision == 'request_revision' else decision
+    _authorize(user, action_name, proposal=proposal)
     policy = _policy()
     reviews = list(proposal.reviews.all())
     if decision == 'approve':
@@ -484,6 +553,7 @@ def publish(proposal, user):
             raise EditorialError('Evaluation proposals are never published.')
         if proposal.status != 'approved':
             raise EditorialError('Only approved proposals can be published.')
+        _authorize(user, 'publish', proposal=proposal)
         if proposal.base_id != article.published_id:
             current = article.published
             _audit(
@@ -510,10 +580,16 @@ def publish(proposal, user):
             proposal.status = 'published'
             proposal.result = candidate
             proposal.save()
+            event = _record_publication(
+                article, candidate, kind='publish', user=user, previous=previous,
+                reason=proposal.decision_note or 'Approved proposal published.',
+                policy_version=_policy_version_label(), decision='approve',
+            )
             _audit(
                 article, 'published', actor=user, revision=candidate, proposal=proposal,
                 reason=proposal.decision_note or 'Approved proposal published.',
-                detail={'from': previous.label if previous else None, 'to': candidate.label},
+                detail={'from': previous.label if previous else None, 'to': candidate.label,
+                        'publication_event': event.pk},
             )
     if stale:
         raise StaleProposalError(
@@ -526,6 +602,7 @@ def publish(proposal, user):
 def revert(article, target, user, *, reason, expected_current_id):
     """Restore an earlier revision's content as a NEW published revision. History is kept."""
     require_staff(user)
+    _authorize(user, 'revert')
     reason = (reason or '').strip()
     if not 5 <= len(reason) <= 500:
         raise block_rules.ValidationError('Give a reason for the revert (5 to 500 characters).')
@@ -559,9 +636,13 @@ def revert(article, target, user, *, reason, expected_current_id):
             article.title = new.title
             article.opening = new.opening
             article.save()
+            event = _record_publication(
+                article, new, kind='revert', user=user, previous=current, reason=reason, decision='revert',
+            )
             _audit(
                 article, 'reverted', actor=user, reason=reason, revision=new,
-                detail={'restored_from': target.label, 'previous': current.label, 'result': new.label},
+                detail={'restored_from': target.label, 'previous': current.label, 'result': new.label,
+                        'publication_event': event.pk},
             )
     if stale:
         raise StaleProposalError(f'Refused: the article is now at {stale}. Reload the history page and retry.')
@@ -591,8 +672,13 @@ def create_published_revision(article, user, *, items, citations, summary, title
         article.title = title
         article.opening = opening
         article.save()
+        event = _record_publication(
+            article, revision, kind='initial' if previous is None else 'publish', user=user, previous=previous,
+            reason=summary[:300], decision='direct',
+        )
         _audit(article, 'published', actor=user, revision=revision,
-               reason=summary[:300], detail={'from': previous.label if previous else None, 'to': revision.label})
+               reason=summary[:300], detail={'from': previous.label if previous else None, 'to': revision.label,
+                                             'publication_event': event.pk})
     return revision
 
 

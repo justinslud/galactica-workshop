@@ -5,6 +5,25 @@ from django.db import models
 from django.db.models import Q
 
 
+class Topic(models.Model):
+    """The stable unit of scope. Deliberately minimal in M0; scope/coverage fields come later."""
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    slug = models.SlugField(max_length=120, unique=True)
+    title = models.CharField(max_length=200)
+    scope_statement = models.TextField(blank=True, help_text='What this topic covers and excludes.')
+    parent = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='children')
+    is_ambiguous = models.BooleanField(default=False, help_text='A disambiguation page rather than one canonical article.')
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['title']
+
+    def __str__(self):
+        return self.title
+
+
 class Article(models.Model):
     PROVENANCE = [
         ('demonstration', 'Demonstration draft (illustrative, not verified)'),
@@ -16,6 +35,7 @@ class Article(models.Model):
     slug = models.SlugField(max_length=120, unique=True)
     title = models.CharField(max_length=200)
     opening = models.TextField(blank=True)
+    topic = models.ForeignKey(Topic, null=True, blank=True, on_delete=models.PROTECT, related_name='articles')
     provenance = models.CharField(max_length=20, choices=PROVENANCE, default='workshop')
     published = models.ForeignKey(
         'Revision', null=True, blank=True, on_delete=models.PROTECT, related_name='+'
@@ -72,6 +92,86 @@ class Revision(models.Model):
     @property
     def label(self):
         return f'r{self.number}'
+
+
+class PublicationEvent(models.Model):
+    """Append-only record of a revision becoming (or reverting) the article's published revision.
+
+    Article.published is a cache. This row is the durable answer to "what was published on date X".
+    """
+
+    KINDS = [
+        ('initial', 'Initial publication'),
+        ('publish', 'Published proposal'),
+        ('revert', 'Published revert'),
+        ('import', 'Imported publication'),
+    ]
+
+    id = models.BigAutoField(primary_key=True)
+    article = models.ForeignKey(Article, on_delete=models.PROTECT, related_name='publication_events')
+    revision = models.ForeignKey('Revision', on_delete=models.PROTECT, related_name='publication_events')
+    sequence = models.PositiveIntegerField(help_text='Per-article publication sequence, starting at 1.')
+    kind = models.CharField(max_length=20, choices=KINDS, default='publish')
+    published_at = models.DateTimeField()
+    published_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    previous_revision = models.ForeignKey('Revision', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    policy_version = models.CharField(max_length=160, blank=True, help_text='Policy active when this was published, if known.')
+    decision = models.CharField(max_length=40, blank=True, help_text='approve/revert/direct; not a foreign key in M0.')
+    reason = models.TextField(blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['article', 'sequence']
+        constraints = [
+            models.UniqueConstraint(fields=['article', 'sequence'], name='unique_publication_sequence'),
+            models.UniqueConstraint(fields=['article', 'revision'], name='unique_publication_revision'),
+        ]
+
+    def __str__(self):
+        return f'{self.article.slug} publication {self.sequence} ({self.kind})'
+
+
+class Watch(models.Model):
+    """Opt-in article watch. A web digest only; no email is sent in this pass."""
+
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='watches')
+    article = models.ForeignKey(Article, on_delete=models.CASCADE, related_name='watches')
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_seen_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['user', 'article'], name='unique_watch_per_user_article'),
+        ]
+
+    def __str__(self):
+        return f'{self.user.username} watches {self.article.slug}'
+
+
+class ContributorProfile(models.Model):
+    """Capability tier for a human account. This is not identity verification or a reputation score."""
+
+    TRUST_LEVELS = [
+        ('new', 'New / limited'),
+        ('standard', 'Standard'),
+        ('trusted', 'Trusted reviewer'),
+        ('steward', 'Steward / publisher'),
+    ]
+
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='contributor_profile')
+    trust_level = models.CharField(max_length=20, choices=TRUST_LEVELS, default='standard')
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['user__username']
+
+    def __str__(self):
+        return f'{self.user.username} ({self.get_trust_level_display()})'
 
 
 class Block(models.Model):
@@ -242,6 +342,7 @@ class Review(models.Model):
     origin = models.CharField(max_length=20, default='simulated')
     declared_model = models.CharField(max_length=120, blank=True, help_text='Declared by the runner. Not verified identity.')
     claim_verdicts = models.JSONField(default=dict, blank=True, help_text='claim id -> verdict/issue/comment.')
+    reviewer = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name='reviews')
     agent = models.ForeignKey('Agent', null=True, blank=True, on_delete=models.SET_NULL, related_name='reviews')
     agent_run = models.ForeignKey('AgentRun', null=True, blank=True, on_delete=models.SET_NULL, related_name='reviews')
     job = models.ForeignKey('Job', null=True, blank=True, on_delete=models.SET_NULL, related_name='reviews')

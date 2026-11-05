@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+{% block title %}Watchlist{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Watchlist</p>
+  <h1>Watchlist</h1>
+  <p class="lede">Articles you chose to follow. <strong>No email and no push.</strong> This page is the digest you choose to open; updates wait here until you look.</p>
+</header>
+
+<section class="card" aria-labelledby="how-h">
+  <h2 id="how-h">How this works</h2>
+  <ul class="plain-list">
+    <li>Watching is opt-in, article by article. Choose <strong>Watch</strong> on an article to add it; choose <strong>Watching</strong> again to remove it.</li>
+    <li><strong>No email.</strong> The workshop sends no mail and no push, and stores no address for this.</li>
+    <li><strong>This page is the digest.</strong> It batches the publications and reverts recorded since you last marked a row seen.</li>
+    <li>Mark a row seen after reading, or mark all rows at once. Marking seen does not remove the watch.</li>
+  </ul>
+</section>
+
+{% if rows %}
+<div class="action-row">
+  <span class="result-count">{{ rows|length }} article{{ rows|length|pluralize }} watched</span>
+  <form method="post" action="{% url 'watchlist_seen' %}" class="inline-form">
+    {% csrf_token %}
+    <button class="btn btn-small btn-quiet" type="submit">Mark all as seen</button>
+  </form>
+</div>
+
+<div class="article-list">
+  {% for row in rows %}
+  <article class="article-card">
+    <div>
+      <h2>
+        <a href="{% url 'article' row.article.slug %}">{{ row.article.title }}</a>
+        {% if row.new_count %}<span class="badge badge-pending">{{ row.new_count }} new</span>{% endif %}
+      </h2>
+      <p class="meta-line">
+        <span class="muted">Last marked seen {{ row.watch.last_seen_at|date:"j M Y H:i"|default:"never" }}</span>
+        {% if row.latest_event %}
+        <span class="muted">· latest {{ row.latest_event.get_kind_display|lower }} {{ row.latest_event.revision.label|default:"—" }} on {{ row.latest_event.published_at|date:"j M Y" }}</span>
+        {% else %}
+        <span class="muted">· no publications since you added it</span>
+        {% endif %}
+      </p>
+      {% if row.latest_event.reason %}<p class="reason">{{ row.latest_event.reason }}</p>{% endif %}
+    </div>
+    <div class="watch-actions">
+      <form method="post" action="{% url 'watchlist_seen' %}" class="inline-form">
+        {% csrf_token %}
+        <input type="hidden" name="article" value="{{ row.article.pk }}">
+        <button class="btn btn-small btn-quiet" type="submit">Mark as seen</button>
+      </form>
+      <form method="post" action="{% url 'article_watch' row.article.slug %}" class="inline-form">
+        {% csrf_token %}
+        <button class="btn btn-small btn-quiet" type="submit">Unwatch</button>
+      </form>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state">
+  <h2>Nothing on your watchlist</h2>
+  <p>Watching is opt-in. Open any article and choose <strong>Watch</strong> to follow its publication history here. No email is sent; this page is the digest you open when you want it.</p>
+  <a class="btn btn-primary" href="{% url 'library' %}">Browse the library</a>
+</div>
+{% endif %}
+{% endblock %}

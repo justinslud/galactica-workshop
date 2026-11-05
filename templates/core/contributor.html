@@ -1,0 +1,86 @@
+{% extends 'base.html' %}
+{% block title %}Contributions by {{ contributor.username }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Contributor</p>
+  <h1>Contributions by {{ contributor.username }}</h1>
+  <p class="lede">Public revisions this person wrote, plus the proposals of theirs that were published. Drafts, rejected proposals and account details are not shown here.</p>
+</header>
+
+<section class="stats" aria-label="Contribution summary">
+  <div class="stat"><strong>{{ current_revisions|length }}</strong><span>Currently published</span></div>
+  <div class="stat"><strong>{{ revision_count }}</strong><span>Public revision{{ revision_count|pluralize }}</span></div>
+  <div class="stat"><strong>{{ article_count }}</strong><span>Article{{ article_count|pluralize }} contributed to</span></div>
+  <div class="stat"><strong>{{ published_proposals|length }}</strong><span>Published proposal{{ published_proposals|length|pluralize }}</span></div>
+</section>
+
+{% if current_revisions %}
+<section class="card">
+  <h2>Current publications</h2>
+  <p class="help">Revisions by this contributor that are published right now. Superseded revisions are listed below.</p>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Article</th><th>Revision</th><th>Published</th></tr></thead>
+    <tbody>
+    {% for r in current_revisions %}
+      <tr>
+        <td><a href="{% url 'article' r.article.slug %}">{{ r.article.title }}</a></td>
+        <td><strong>{{ r.label }}</strong> <span class="badge badge-published">current</span></td>
+        <td>{{ r.published_at|date:"j M Y"|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="3" class="empty-inline">No published revision is currently in force.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% if past_revisions %}
+<section class="card">
+  <h2>Past public revisions</h2>
+  <p class="help">Earlier public revisions, kept for credit and for the record. They are not deleted when an article moves on.</p>
+  <div class="table-scroll">
+  <table class="data">
+    <thead><tr><th>Article</th><th>Revision</th><th>State</th><th>Created</th><th>Summary</th></tr></thead>
+    <tbody>
+    {% for r in past_revisions %}
+      <tr>
+        <td><a href="{% url 'article' r.article.slug %}">{{ r.article.title }}</a></td>
+        <td>{{ r.label }}</td>
+        <td><span class="badge badge-{{ r.state }}">{{ r.get_state_display|default:r.state }}</span></td>
+        <td>{{ r.created_at|date:"j M Y" }}</td>
+        <td class="reason-cell">{{ r.summary|default:"—" }}</td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="empty-inline">No past public revisions.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+{% if published_proposals %}
+<section class="card">
+  <h2>Published proposals</h2>
+  <ul class="plain-list">
+    {% for p in published_proposals %}
+    <li>
+      <a href="{% url 'article' p.article.slug %}">{{ p.article.title }}</a>
+      <span class="muted">{{ p.created_at|date:"j M Y" }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if not current_revisions and not past_revisions and not published_proposals %}
+<div class="empty-state">
+  <h2>No public contributions yet</h2>
+  <p>{{ contributor.username }} has no published revisions. Only public work appears on this page.</p>
+  <a class="btn btn-primary" href="{% url 'library' %}">Browse the library</a>
+</div>
+{% endif %}
+{% endblock %}

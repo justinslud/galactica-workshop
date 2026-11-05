@@ -1,8 +1,8 @@
 from django.contrib import admin
 
 from .models import (
-    Agent, AgentCredential, AgentRun, Article, AuditEvent, Block, Citation, ConfigVersion, EvalCase, EvalResult, Job,
-    JobEvent, Proposal, Review, Revision, Source, SourceSnapshot,
+    Agent, AgentCredential, AgentRun, Article, AuditEvent, Block, Citation, ConfigVersion, ContributorProfile, EvalCase,
+    EvalResult, Job, JobEvent, Proposal, PublicationEvent, Review, Revision, Source, SourceSnapshot, Topic, Watch,
 )
 
 
@@ -29,12 +29,44 @@ class BlockInline(admin.TabularInline):
         return False
 
 
+@admin.register(Topic)
+class TopicAdmin(admin.ModelAdmin):
+    list_display = ('title', 'slug', 'parent', 'is_ambiguous', 'created_at')
+    list_filter = ('is_ambiguous',)
+    search_fields = ('title', 'slug', 'scope_statement')
+    readonly_fields = ('id', 'created_at')
+
+
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ('title', 'slug', 'provenance', 'published', 'updated_at')
-    list_filter = ('provenance',)
+    list_display = ('title', 'slug', 'topic', 'provenance', 'published', 'updated_at')
+    list_filter = ('provenance', 'topic')
     search_fields = ('title', 'slug', 'opening')
     readonly_fields = ('published', 'created_at', 'updated_at')
+
+
+@admin.register(PublicationEvent)
+class PublicationEventAdmin(ReadOnlyAdmin):
+    list_display = ('article', 'sequence', 'kind', 'published_at', 'published_by', 'revision', 'previous_revision')
+    list_filter = ('kind', 'article')
+    search_fields = ('article__slug', 'reason', 'policy_version')
+    readonly_fields = ('article', 'revision', 'sequence', 'kind', 'published_at', 'published_by',
+                       'previous_revision', 'policy_version', 'decision', 'reason', 'content_hash', 'created_at')
+
+
+@admin.register(Watch)
+class WatchAdmin(ReadOnlyAdmin):
+    list_display = ('user', 'article', 'created_at', 'last_seen_at')
+    search_fields = ('user__username', 'article__slug')
+    readonly_fields = ('user', 'article', 'created_at', 'last_seen_at')
+
+
+@admin.register(ContributorProfile)
+class ContributorProfileAdmin(admin.ModelAdmin):
+    list_display = ('user', 'trust_level', 'updated_at')
+    list_filter = ('trust_level',)
+    search_fields = ('user__username', 'notes')
+    readonly_fields = ('created_at', 'updated_at')
 
 
 @admin.register(Revision)
@@ -59,10 +91,10 @@ class ProposalAdmin(ReadOnlyAdmin):
 
 @admin.register(Review)
 class ReviewAdmin(ReadOnlyAdmin):
-    list_display = ('proposal', 'role', 'verdict', 'origin', 'agent', 'declared_model', 'created_at')
+    list_display = ('proposal', 'role', 'verdict', 'origin', 'reviewer', 'agent', 'declared_model', 'created_at')
     list_filter = ('role', 'verdict', 'origin')
-    readonly_fields = ('proposal', 'role', 'verdict', 'comment', 'evidence_notes', 'origin', 'declared_model', 'agent',
-                       'agent_run', 'job', 'created_at')
+    readonly_fields = ('proposal', 'role', 'verdict', 'comment', 'evidence_notes', 'origin', 'declared_model',
+                       'reviewer', 'agent', 'agent_run', 'job', 'created_at')
 
 
 @admin.register(Agent)

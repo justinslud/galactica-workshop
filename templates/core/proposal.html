@@ -7,6 +7,7 @@
   <h1>{{ proposal.candidate.label }} against {{ proposal.base.label|default:"a new article" }}</h1>
   <p class="status-row">
     <span class="badge badge-{{ proposal.status }}">{{ proposal.get_status_display }}</span>
+    <span class="badge badge-{{ workflow_state }}">{{ workflow_label }}</span>
     <span class="badge badge-{{ proposal.origin }}">{{ proposal.get_origin_display }}</span>
     {% if proposal.is_stale %}<span class="badge badge-stale">Stale</span>{% endif %}
     {% if proposal.repeat_of %}<span class="badge badge-warn">Repeats rejected <a href="{% url 'proposal' proposal.repeat_of.pk %}">proposal {{ proposal.repeat_of.id|slice:":8" }}</a></span>{% endif %}
@@ -52,6 +53,7 @@
           <strong>{{ row.label }}</strong>
           <span class="badge badge-{{ row.review.verdict }}">{{ row.review.get_verdict_display }}</span>
           <span class="badge badge-{{ row.review.origin }}">{{ row.review.origin|upper }}</span>
+          {% if row.review.reviewer %}<span class="badge badge-human">human: {{ row.review.reviewer.username }}</span>{% endif %}
         </div>
         <p>{{ row.review.comment }}</p>
         {% if row.review.evidence_notes %}<p class="muted small">{{ row.review.evidence_notes }}</p>{% endif %}
@@ -60,6 +62,32 @@
     {% empty %}
       <div class="empty-inline">No reviews yet. {% if user.is_staff and proposal.status == 'pending' %}Run the review panel below.{% endif %}</div>
     {% endfor %}
+
+    {% if can_review %}
+    <div class="human-review-form">
+      <h3>Record a human review</h3>
+      <p class="help">One review per role. A human review is attributed to your account and is counted against your daily review limit. It does not approve the proposal.</p>
+      <form method="post" action="{% url 'proposal_review' proposal.pk %}" class="form-stack">
+        {% csrf_token %}
+        <label>Role
+          <select name="role" required>
+            {% for value, label in review_roles %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+          </select>
+        </label>
+        <label>Verdict
+          <select name="verdict" required>
+            <option value="support">Support</option>
+            <option value="concern">Concern</option>
+            <option value="object">Object</option>
+            <option value="abstain">Abstain</option>
+          </select>
+        </label>
+        <label>Comment<textarea name="comment" rows="3" maxlength="1200" required placeholder="What did you check, and what should the author or publisher know?"></textarea></label>
+        <label>Evidence notes (optional)<textarea name="evidence_notes" rows="2" maxlength="1200" placeholder="Sources opened, quotes checked, or claim-level concerns."></textarea></label>
+        <button class="btn btn-primary" type="submit">Record review</button>
+      </form>
+    </div>
+    {% endif %}
   </section>
 </div>
 
@@ -143,8 +171,8 @@
 
 <section class="card decision-card">
   <h2>Decision</h2>
-  {% if user.is_staff %}
-    {% if open_for_decision %}
+  {% if can_decide or can_publish %}
+    {% if can_decide and open_for_decision %}
       <div class="action-row">
         <form method="post" action="{% url 'proposal_decide' proposal.pk %}" class="inline-form">
           {% csrf_token %}<input type="hidden" name="decision" value="approve">
@@ -192,7 +220,7 @@
       </form>
     {% endif %}
   {% else %}
-    <p class="muted">Decisions and publishing are staff actions. Your proposal is visible here while it waits.</p>
+    <p class="muted">Decisions and publishing are steward actions. Human reviews are recorded above; the proposal stays open until a steward decides.{% if user.is_staff %} Another steward must decide a proposal you wrote.{% endif %}</p>
   {% endif %}
 </section>
 

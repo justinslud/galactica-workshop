@@ -11,7 +11,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from . import configs, demo_content as dc, editorial, jobs
-from .models import Agent, Article, EvalCase, Job, Proposal, Source
+from .models import Agent, Article, EvalCase, Job, Proposal, Source, Topic
 
 
 def ensure_users():
@@ -69,10 +69,36 @@ def ensure_cases():
         )
 
 
-def _create_demo_article(spec, admin, sources):
+DEMO_TOPICS = [
+    ('subvocal-interfaces', 'Subvocal interfaces',
+     'Silent-speech interfaces and the sensors used to read speech without audible sound.'),
+    ('quadratic-funding', 'Quadratic funding',
+     'Matching-fund mechanisms for public goods, including quadratic voting and related designs.'),
+    ('encyclopedia-galactica', 'Encyclopedia Galactica',
+     'The fictional reference work and its literary and cultural afterlives.'),
+]
+
+
+def ensure_topics(admin):
+    """Get-or-create the demonstration topic graph and attach existing demo articles once."""
+    topics = {}
+    for slug, title, scope in DEMO_TOPICS:
+        topic, _ = Topic.objects.get_or_create(
+            slug=slug, defaults={'title': title, 'scope_statement': scope, 'created_by': admin},
+        )
+        topics[slug] = topic
+    for slug, topic in topics.items():
+        article = Article.objects.filter(slug=slug, topic__isnull=True).first()
+        if article is not None:
+            article.topic = topic
+            article.save(update_fields=['topic'])
+    return topics
+
+
+def _create_demo_article(spec, admin, sources, topic=None):
     slug = spec['slug']
     article = Article.objects.create(slug=slug, title=spec['title'], opening=spec['opening'],
-                                     provenance='demonstration')
+                                     provenance='demonstration', topic=topic)
     items = [{'block_id': dc.bid(slug, i), 'kind': b['kind'], 'data': b['data']}
              for i, b in enumerate(spec['blocks'])]
     citations = [
@@ -117,16 +143,20 @@ def seed(log=print):
     ensure_agent(admin)
     configs.ensure_presets()
     sources = ensure_sources()
+    topics = ensure_topics(admin)
     if Article.objects.filter(slug=dc.SUBVOCAL['slug']).exists():
         ensure_cases()
         log('Demo content already present. Nothing duplicated; presets, sources and test cases are up to date.')
         return
     with transaction.atomic():
-        _build(admin, sources, log)
+        _build(admin, sources, topics, log)
 
 
-def _build(admin, sources, log):
-    articles = {spec['slug']: _create_demo_article(spec, admin, sources) for spec in dc.ARTICLES}
+def _build(admin, sources, topics, log):
+    articles = {
+        spec['slug']: _create_demo_article(spec, admin, sources, topics.get(spec['slug']))
+        for spec in dc.ARTICLES
+    }
     ensure_cases()
     subvocal, quadratic, encyclopedia = articles['subvocal-interfaces'], articles['quadratic-funding'], articles['encyclopedia-galactica']
     log('Created 3 demonstration articles at r1 (published).')

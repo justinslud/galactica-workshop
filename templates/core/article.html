@@ -34,6 +34,23 @@
   <a href="{% url 'editor' article.slug %}">Open the editor</a>.</div>
 {% endif %}
 
+<div class="article-credit">
+  <div>
+    {% if topic %}<p class="eyebrow">Topic · <a href="{% url 'topic' topic.slug %}">{{ topic.title }}</a></p>{% endif %}
+    {% if byline_user %}<p class="byline">Written by <a href="{% url 'contributor' byline_user.username %}">{{ byline_user.username }}</a></p>{% endif %}
+  </div>
+  <form method="post" action="{% url 'article_watch' article.slug %}" class="watch-form">
+    {% csrf_token %}
+    {% if is_watching %}
+    <button class="btn btn-small" type="submit" aria-pressed="true">Watching</button>
+    <span class="help">On your watchlist. No email is sent.</span>
+    {% else %}
+    <button class="btn btn-small btn-quiet" type="submit" aria-pressed="false">Watch</button>
+    <span class="help">Follow this article in your watchlist. No email.</span>
+    {% endif %}
+  </form>
+</div>
+
 {% if revision %}
 <p class="meta-line">
   {{ revision.label }} · {{ revision.get_state_display }}
@@ -41,6 +58,17 @@
   {% if revision.summary %}· {{ revision.summary }}{% endif %}
 </p>
 {% include 'core/_article_body.html' with title=revision.title opening=revision.opening items=items %}
+{% if publication_event %}
+<p class="provenance">
+  Published from <strong>{{ publication_event.revision.label|default:revision.label }}</strong>
+  {% if publication_event.published_by %}by {{ publication_event.published_by.username }}{% else %}by system{% endif %}
+  on {{ publication_event.published_at|date:"j M Y H:i" }}
+  {% if publication_event.policy_version %}under policy <strong>{{ publication_event.policy_version }}</strong>{% endif %}
+  {% if publication_event.previous_revision %}(replaces {{ publication_event.previous_revision.label }}){% endif %}.
+  {% if publication_event.reason %}{{ publication_event.reason }}{% endif %}
+  <a href="{% url 'history' article.slug %}">Publication log</a>
+</p>
+{% endif %}
 {% else %}
 <div class="empty-state">
   <h2>Not published yet</h2>
