@@ -1,7 +1,7 @@
 # Current state and gap assessment
 
-**Status:** working note for the 2026-11-04 product-specification pass; **updated 2026-11-04 after the M0
-implementation pass** (PublicationEvent, minimal Topic, Watch, reader surfaces — see §1.4).
+**Status:** working note for the 2026-11-04 product-specification pass; **updated 2026-11-05 after the M0
+remainder pass** (permalinks, claim resolver, license fields, FTS5, backup drill, write idempotency — see §1.4).
 **Scope:** the Django workshop in this repository, plus the earlier TypeScript prototype and the
 decision records it left behind. This note separates what is verified from what is direction,
 proposal, inference or unresolved.
@@ -10,20 +10,22 @@ proposal, inference or unresolved.
 ran the test suite; read the decision material in `~/projects/galactica` (`DECISIONS.md`,
 `EXPLORATION.md`, `docs/model.md`, `docs/SPEC-DIGEST.md`, the OpenSpec change). External research is in
 `docs/research/`. Nothing was deployed, published or renamed. The local SQLite database **was migrated** by
-the M0 pass (migrations `0006`/`0007`/`0008`, applied 2026-11-04; `0008` makes the event→article FK `PROTECT`
-so deleting an article cannot cascade-delete its publication history); it is gitignored.
+the M0 and authorization passes (migrations `0006`–`0009`, applied 2026-11-04/05; `0008` makes the event→article FK
+`PROTECT` so deleting an article cannot cascade-delete its publication history) and the M0 remainder (migrations
+`0010`–`0012`, applied 2026-11-05: license fields, search document/FTS5, idempotency records and a
+legacy content-hash backfill); it is gitignored.
 
 ## 1. What actually exists and works
 
 ### 1.1 The Django workshop (this repository)
 
-Verified by reading the code and by running `.venv/bin/python manage.py test` on 2026-11-05, after the M0 and
-authorization/review-queue slices: **171 tests pass** (133 before M0; 154 after M0), Django system check clean,
-`makemigrations --check` clean. The local database currently holds 6 articles, 25 revisions, 143 blocks, 47 claims,
+Verified by reading the code and by running `.venv/bin/python manage.py test` on 2026-11-05, after the M0 remainder:
+**190 tests pass** (133 before M0; 154 after M0; 171 after authorization; 190 after the remainder), Django system
+check clean, `makemigrations --check` clean. The local database currently holds 6 articles, 25 revisions, 47 claims,
 263 citations, 18 sources, 4 source snapshots, 19 proposals, 72 reviews, 21 jobs, 6 evaluation cases, 105 audit
-events, **3 demonstration topics, 6 publication events, 0 watch rows and 2 contributor profiles** (the manual test
-watch was removed; the two profiles are the seeded admin/editor created by the first authorization check). No
-browser-level verification was performed, so the new surfaces are test/check-verified only.
+events, **3 demonstration topics, 6 publication events, 0 watch rows, 2 contributor profiles, 3 search documents
+and 0 idempotency records**. `check_search` reports 3 documents / 3 indexed / ok. No browser-level verification was
+performed, so the new surfaces are test/check-verified only.
 
 Implemented and exercised:
 
@@ -74,24 +76,33 @@ Galactica remains a public encyclopedia/shared reference; explanations and diagr
 the claim ledger supports rather than replaces article authorship; reading experience and claim
 granularity remain open; human review at the start is not a permanent requirement for every edit.
 
-### 1.4 M0 implementation status (2026-11-04, after this assessment)
+### 1.4 M0 implementation status (complete, 2026-11-05)
 
-The M0 slice was implemented in the workshop after this note was first written. **Implemented and test-covered:**
-the append-only `PublicationEvent` (event→article FK is `PROTECT`); the minimal `Topic` plus `Article.topic` and
-demo topic seeding (3 demo topics); the opt-in `Watch`; migrations `0006_m0_publication_topics_watch`,
-`0007_backfill_publication_events` and `0008_publication_event_protect_article` (applied to the local database;
-`0007` backfilled 6 existing publication events, `0008` prevents an article delete from cascade-deleting its
-history); the
-reader surfaces `/topics/`, `/topics/<slug>/`, `/contributors/<username>/` (public credit page, no private data),
-`/watchlist/`, the watch toggle and mark-seen endpoints; the article-page byline/topic/provenance/watch block; and
-the history-page publication log. `manage.py check` and `makemigrations --check` are clean; the suite is **154
-tests** (21 new in `core/tests/test_m0_publication_topic_watch.py`). The database was migrated locally; nothing
-was deployed, no data was published outside the local DB, and no browser-level check was run.
+M0 is implemented and test-covered in the workshop. The first slice added the append-only `PublicationEvent`
+(event→article FK is `PROTECT`), the minimal `Topic` plus `Article.topic` and demo topic seeding (3 demo topics),
+the opt-in `Watch`, migrations `0006`–`0008`, the reader surfaces `/topics/`, `/topics/<slug>/`,
+`/contributors/<username>/`, `/watchlist/`, the watch toggle/mark-seen endpoints, the article byline/topic/
+provenance/watch block and the history publication log.
 
-**Not in this slice — do not describe these as done:** stable permalink / claim resolver, license and attribution
-fields, SQLite backup + restore drill, FTS5 search, `Idempotency-Key`/`If-Match` on write APIs (M0 remainder);
-correction intake, review tiers, full `Topic` scope/coverage (M1); a designed public (anonymous) full-history page,
-email digest, and the `View`/`Assertion` objects (later). The M1+ ladder is unchanged.
+The remainder (2026-11-05) added:
+- `/article/<slug>/r/<n>/` revision permalinks with canonical links and a citation block (revision id, content
+  hash, license, access date); public for published/superseded revisions, 404 for anonymous draft access.
+- `/claims/<uuid>/` HTML and `/api/v1/claims/<uuid>/` token JSON claim resolver, with `resolution`,
+  `valid_to`, citations/snapshots and a current-revision pointer. Claim ids are revision-bound; no merge/alias map.
+- `Article.license` / `Article.attribution`, `Source.license` / `Source.attribution`, and a
+  `PublicationEvent.license` snapshot so relicensing does not rewrite history. Default article licence is
+  CC BY-SA 4.0 (subject to counsel).
+- `SearchDocument` plus an external-content FTS5 table/triggers, `/search/` with BM25 ranking and match reasons,
+  `rebuild_search` and `check_search`; publishing/reverting refreshes the index.
+- `scripts/backup.sh` and `scripts/restore_drill.sh`; a real local drill passed on 2026-11-05 (8 tables,
+  integrity ok, checksum/row counts matched). Local-only and unscheduled.
+- `IdempotencyRecord` and `Idempotency-Key` on proposal/review/research writes; `If-Match` on agent proposal
+  writes; `409`/`412`/`422`/`428`; ETag/`If-None-Match` on reads; `application/problem+json` errors.
+
+**Still not done (M1+):** correction intake, review tiers, full `Topic` scope/coverage; a designed public
+(anonymous) full-history page, email digest, and `View`/`Assertion` objects. No claim merge/alias map, no
+`claim_key`, no multilingual search, no scheduled/off-host backup, no live restore, and no human E1/E4 sessions.
+E1/E4 kits exist under `experiments/`; they are not results.
 
 ### 1.5 Authorization and review-queue status (2026-11-05)
 
@@ -107,7 +118,7 @@ migration `0009_contributor_profiles_reviewer`. Services (`open_proposal`, `subm
 `trusted` 10/25, steward unlimited. Same-agent reviews are allowed in v1 but marked `same_agent` in the audit
 and are not independent evidence. **Not in this slice:** auto-assignment, automatic trust promotion, an external
 policy engine, a `withdrawn` state, appeal/dispute workflows, per-reviewer calibration, and a trust-management UI
-beyond Django admin. The suite is **171 tests** (17 new in `core/tests/test_authorization_dashboard.py`); no
+beyond Django admin. The suite was **171 tests** at that point (17 new in `core/tests/test_authorization_dashboard.py`); no
 browser-level check was run.
 
 ## 2. Accepted direction (do not silently re-litigate)
@@ -217,18 +228,18 @@ change should be recorded as a change, not presented as a discovery.
 
 | Area | Current state | Gap that matters for an ambitious reference |
 |---|---|---|
-| Reader experience | Article page (byline, topic, provenance, watch toggle), block rendering, citations drawer, history page with publication log, topic index/pages, public contributor credit page, login-only watchlist; no search beyond title/opening; no related-topic graph, timelines beyond a block type, maps, reading levels or languages | No defined article anatomy, no evidence-inspection UX beyond a drawer, no correction/dispute surface, no view provenance, no stable permalinks, no designated public full-history page, no accessibility/mobile verification |
+| Reader experience | Article page (byline, topic, provenance, watch toggle), block rendering, citations drawer, revision permalinks with citation/licence, claim resolver (HTML + token JSON), FTS5 search over published titles/bodies/claims/sources, history page with publication log, topic index/pages, public contributor credit page, login-only watchlist; no related-topic graph, timelines beyond a block type, maps, reading levels or languages | No defined article anatomy, no evidence-inspection UX beyond a drawer, no correction/dispute surface, no view provenance, no designated public full-history page, no multilingual/CJK search, no accessibility/mobile verification |
 | Knowledge model | Article/revision/block/claim/citation/source; minimal `Topic` (M0) and append-only `PublicationEvent` (M0); no stable assertion, no source assessment, no dispute object | Scope, coverage, splitting, definitions, regional variation, negative findings, COI and source-quality judgments have no home |
 | Contribution | Human drafts + proposals; agent cycle; scoped tokens; capability/trust profiles with quotas; self-review/self-decision guards; human review queue | No onboarding, automatic trust promotion, correction intake, appeal, dispute procedure, risk classes or measured review-capacity model |
 | Governance | Founder/staff authority; policy config versions; audit | No policy-change procedure, no separation of factual/editorial/community judgment, no sybil/coordination playbook, no transparency reports |
-| Technical | SQLite, jobs, config snapshots, snapshots, API, tests | No idempotency/ETag, no exports/licensing, no replay tool, no backup/restore drill, no search index, no cost model, no incident runbook |
+| Technical | SQLite, jobs, config snapshots, snapshots, token API with ETag/304 and idempotent writes, FTS5 search, backup/restore drill, licence fields, tests | No exports, no replay tool, no scheduled/off-host backup, no live restore, no multilingual search, no cost model, no incident runbook |
 | Launch | Three demo articles plus agent drafts; local only | No seed portfolio, no beta criteria, no contributor docs, no usefulness metrics, no staged admission control |
 
 ## 6. Verification notes and limits of this assessment
 
 - Tests were run against the current working tree. This note first read the database without migrating it; the
   M0 pass migrated the local database (`0006`/`0007`/`0008`) and the 2026-11-05 authorization pass added `0009`;
-  the current suite is **171 tests** with clean checks.
+  the current suite is **190 tests** with clean checks.
 - The M0 and authorization slices are code- and test-verified only: no browser-level verification was performed,
   so the new pages' visual and mobile behaviour is inferred from templates and CSS.
 - No browser automation was available, so visual and mobile behaviour is inferred from templates and CSS,

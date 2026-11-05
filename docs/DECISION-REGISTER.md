@@ -4,7 +4,7 @@
 [Decision updates — 2026-11-04](#decision-updates--2026-11-04) for the answers recorded from the product review,
 [M0 implementation status](#m0-implementation-status-same-date-separate-pass) for the M0 slice, and
 [Implementation update — 2026-11-05](#implementation-update--2026-11-05-authorization-state-machine-and-human-review-dashboard)
-for the authorization/state-machine/review-dashboard slice (D-41, D-42).
+for the authorization/state-machine/review-dashboard slice (D-41, D-42) and the M0 remainder (D-43).
 **Purpose:** one place to see what is decided, what is proposed, who can decide it, what evidence supports it, and
 what would cause a revisit. It does not replace `~/projects/galactica/DECISIONS.md`; it extends the product
 specification and preserves the earlier record.
@@ -83,6 +83,7 @@ Decisions reserved for the future community are listed at the end of this docume
 | D-40 | Personalization | Presentation only; transient explanations with citations, not published facts | proposed | A | product |
 | D-41 | Authorization and editorial state machine | One deterministic evaluator for capabilities, derived proposal states, transitions, quotas and relationship guards; capability tiers are not identity verification | accepted direction + implemented v1 (2026-11-05); quota numbers are starting parameters, not measured | A+B | product + governance |
 | D-42 | Human review dashboard | Shared `/review/` queue for standard/trusted/steward with state filters, counters, review coverage, objections and stale flags; no auto-assignment | accepted direction + implemented v1 (2026-11-05) | A | product + governance |
+| D-43 | M0 remainder | Revision permalinks + revision-bound claim resolver; license fields with per-publication snapshot; FTS5 published-only search; local backup/restore drill; `Idempotency-Key`/`If-Match` on write API | implemented v1 (2026-11-05); no claim merge/alias or claim_key yet | A | product + ops |
 
 ---
 
@@ -134,12 +135,13 @@ therefore "implemented":
 | D-03 Topic object | minimal `Topic` (slug, title, scope statement, parent, disambiguation flag, creator) + `Article.topic`; demo topic seeding; `/topics/` and `/topics/<slug>/` showing published articles | full scope/coverage checklist, aliases, split/merge, disambiguation behaviour, migration of all articles |
 | D-04/D-08 views | — | `View` object and manifest, reading levels, translations |
 | D-36 seed corpus | real-subject direction only as **3 demonstration topics** seeded locally (no public seed portfolio chosen) | the specific wedge and 5–8 anchor topics; real living-person/company subjects remain out of scope until a policy/legal reviewer and counsel exist |
-| M0 publication history | append-only `PublicationEvent` (per-article sequence; kinds `initial`/`publish`/`revert`/`import`; previous revision, policy version, decision, reason, content hash; unique per article+sequence and article+revision; event→article FK is `PROTECT` so history is not cascade-deleted); written by `publish()`, `revert()` and `create_published_revision()`; history-page publication log; migrations `0006`/`0007`/`0008` (6 events backfilled locally) | stable permalink, claim resolver, a designed public (anonymous) full-history surface |
+| M0 publication history | append-only `PublicationEvent` (per-article sequence; kinds `initial`/`publish`/`revert`/`import`; previous revision, policy version, decision, reason, content hash; unique per article+sequence and article+revision; event→article FK is `PROTECT` so history is not cascade-deleted); written by `publish()`, `revert()` and `create_published_revision()`; history-page publication log; migrations `0006`/`0007`/`0008` (6 events backfilled locally); revision permalinks and the claim resolver added 2026-11-05 | a designed public (anonymous) full-history surface |
 | M0 return loop | byline/credit page `/contributors/<username>/` (no private data), opt-in `Watch`, login-only `/watchlist/` web digest (no email), article-page byline/topic/provenance/watch block | scheduled digest, notifications, email |
-| Other items listed as not implemented | — | license/attribution fields, SQLite backup + restore drill, FTS5, `Idempotency-Key`/`If-Match` (M0 remainder); correction intake, review tiers, full `Topic` scope/coverage (M1); `View`/`Assertion` objects (later) |
+| Other items listed as not implemented | — | **M0 remainder completed 2026-11-05 (D-43):** license/attribution fields, SQLite backup + restore drill, FTS5, `Idempotency-Key`/`If-Match`. Still open: correction intake, review tiers, full `Topic` scope/coverage (M1); `View`/`Assertion` objects (later) |
 
-Tests: **154 pass** (was 133; 21 new in `core/tests/test_m0_publication_topic_watch.py`); `manage.py check` and
-`makemigrations --check` clean. The local database was migrated; nothing was deployed, no production data or
+Tests at that point: **154 pass** (was 133; 21 new in `core/tests/test_m0_publication_topic_watch.py`); the current
+suite is **190**. `manage.py check` and `makemigrations --check` clean. The local database was migrated; nothing was
+deployed, no production data or
 credentials changed, and no repository rename happened.
 
 ### Open questions (recorded, not decided)
@@ -206,9 +208,9 @@ appeal/dispute state machines, a trust-management UI beyond Django admin, and pe
 - Should a withdrawn proposal keep its candidate public? Withdrawal is not implemented.
 
 **Decision statuses:** D-41 (authorization and editorial state machine) and D-42 (human review dashboard) are
-recorded as **accepted direction + implemented v1** with the calibration questions above still open. D-19
-(publication policy minimums) and D-23 (identity verification) keep their own statuses unchanged; this slice is the
-mechanism, not a ratification of either policy.
+recorded as **accepted direction + implemented v1** with the calibration questions above still open. D-43 (M0
+remainder) is **implemented v1**; its limits are in the entry. D-19 (publication policy minimums) and D-23 (identity
+verification) keep their own statuses unchanged; this slice is the mechanism, not a ratification of either policy.
 
 ---
 
@@ -828,6 +830,39 @@ reviewer workload is visible only for the current reviewer's last 7 days.
 **Reversal:** it is a view plus routes; remove or redesign without data loss. Revisit when assignment/claiming or
 per-reviewer calibration is built (both explicitly not in v1).
 
+
+
+### D-43 — M0 remainder: permalink, claim resolver, license, search, backup, idempotency
+
+**Recommendation:** finish M0 with explicit, small mechanisms rather than a larger object model:
+- **Permalink:** `/article/<slug>/r/<n>/` is the canonical public URL for a published/superseded revision; the
+  citation carries revision id, content hash, licence and access date. Drafts stay login-only.
+- **Claim resolver:** `/claims/<uuid>/` (HTML) and `/api/v1/claims/<uuid>/` (token JSON) always resolve the named
+  occurrence, return `resolution` (`current`/`superseded`/`unpublished`) and `valid_to`, and link the current
+  revision. Claim ids remain revision-bound; no merge/alias map or `claim_key` until M2.
+- **License:** `Article.license` defaults to CC BY-SA 4.0 (D-30, subject to counsel), with `attribution`;
+  `Source.license`/`attribution`; and `PublicationEvent.license` records the licence in force at publication so a
+  later relicensing does not rewrite history.
+- **Search:** `SearchDocument` + external-content FTS5 triggers; only published articles are indexed; `/search/`
+  shows BM25 rank, match fields and a plain snippet; `rebuild_search`/`check_search` repair and verify.
+- **Backup:** `scripts/backup.sh` uses the online backup API and writes a checksum/row-count manifest;
+  `scripts/restore_drill.sh` verifies a restore in a temp dir. Local-only, unscheduled; not disaster recovery.
+- **Write API:** `Idempotency-Key` required on proposal/review/research writes; completed duplicates replay, an
+  in-flight duplicate is `409`, key reuse with a different payload is `422`; keys expire after 24h. `If-Match` is
+  required on agent proposal writes (`428` missing, `412` stale with current revision). Reads use ETag/304.
+**Status:** **implemented v1 (2026-11-05)**; 190 tests. **Route:** A. **Domain:** product + ops.
+**Evidence:** the M0 ladder and the technical research on permalinks, FTS5 drift, conditional writes and
+idempotency; implementation is in `core/licensing.py`, `core/search.py`, `core/idempotency.py`, migrations
+`0010`–`0012`, templates, and `scripts/`. The backup drill is recorded in [OPERATIONS.md](OPERATIONS.md).
+**Downside:** claim ids do not survive a revision (a downstream citation to a claim is tied to that revision);
+FTS5 is single-language and can drift if bypassed; backups are local and manual; idempotency covers the JSON API,
+not web forms; the license defaults are not counsel-approved.
+**Reversal:** each piece is separable. Removing search is dropping a derived table; removing idempotency is
+removing the wrapper; license fields can be left unused without changing publication history. Do not retroactively
+rewrite a `PublicationEvent.license`.
+**Revisit:** M2 adds `claim_key`/change diffs and a merge/alias map; multilingual search and off-host/scheduled
+backup are separate; E6 (retry storm) should test the API contract before public write access.
+
 ---
 
 ## Decisions requiring Justin
@@ -883,6 +918,8 @@ reader surfaces listed above. `accepted` status is used only for Justin's dated 
 implemented behavior.
 
 **What the 2026-11-05 pass did:** it implemented the D-41/D-42 authorization/state-machine/review-dashboard slice
-(171 tests; 17 new) and recorded its open calibration questions. It did not change D-19 or D-23, did not ratify
-anything on Justin's behalf, and did not complete any M1+ item. No other decision status changed.
+(171 tests; 17 new) and recorded its open calibration questions. A second 2026-11-05 pass implemented the M0
+remainder (D-43; 190 tests) and prepared the E1/E4 kits. It did not change D-19 or D-23, did not ratify anything
+on Justin's behalf, did not run human experiments, and did not complete any M1+ item. No other decision status
+changed.
 

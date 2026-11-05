@@ -14,7 +14,9 @@
             <div class="claim-head">
               <span class="badge badge-{{ row.claim.support_status }}">{{ row.claim.get_support_status_display }}</span>
               <span class="claim-text">{{ row.claim.text }}</span>
+              <a class="claim-permalink" href="{% url 'claim' row.claim.id %}">Claim link</a>
             </div>
+            {% if row.claim.support_note %}<p class="claim-note">{{ row.claim.support_note }}</p>{% endif %}
             {% if row.citations %}
             <ul class="claim-citations">
               {% for c in row.citations %}

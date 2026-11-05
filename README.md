@@ -13,11 +13,16 @@ The expanded product specification, decision register, worked examples, experime
 assessment](docs/00-CURRENT-STATE.md) and the [product specification](docs/PRODUCT-SPEC.md). The specification is a
 proposal for review, not accepted policy; the earlier decision record in `~/projects/galactica` is preserved.
 
-A partial M0 slice is implemented: append-only publication history, a minimal Topic model and pages, a public
-byline/credit page, and an opt-in web watchlist. A second slice adds capability/trust profiles, deterministic
-proposal states, rolling quotas, self-review/self-decision guards, a `/review/` human queue and a human review
-form. See [CURRENT.md](CURRENT.md) for the exact scope and what remains open. The publication policy minimums,
-agent publish boundary and write API are unchanged.
+M0 is now implemented in the local workshop: append-only publication history; a minimal Topic model and pages; a
+public byline/credit page; an opt-in web watchlist; stable revision permalinks and a public claim resolver; license
+and attribution fields with a per-publication licence snapshot; SQLite FTS5 search; and `Idempotency-Key`/`If-Match`
+on the write API. A separate slice adds capability/trust profiles, deterministic proposal states, rolling quotas,
+self-review/self-decision guards, a `/review/` human queue and a human review form. See [CURRENT.md](CURRENT.md)
+for exact scope, defaults and limits. The publication policy minimums, human publish gate and the rule that agents
+cannot publish are unchanged.
+
+The E1 reader-task and E4 correction-triage experiment kits are in [`experiments/`](experiments/README.md). They
+are protocols, fixtures and analysis scripts — no human sessions have been run, so they contain no results.
 
 ## Repository
 
@@ -27,7 +32,7 @@ The local database, `.venv/`, `runtime/`, logs and generated static files are in
 ## Setup
 
 ```sh
-cd /home/justin/projects/galactica-workshop
+cd /home/vboxuser/projects/galactica-workshop
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python manage.py migrate
@@ -59,8 +64,15 @@ Useful commands:
 ```sh
 .venv/bin/python manage.py run_worker --once     # process at most one queued job
 .venv/bin/python manage.py check_runner          # is the OpenCode CLI reachable? lists free catalog models; makes no model calls
+.venv/bin/python manage.py rebuild_search        # rebuild the FTS5 index from published articles
+.venv/bin/python manage.py check_search          # compare the index with SearchDocument; exit 1 on drift
 .venv/bin/python manage.py test core             # automated checks
+./scripts/backup.sh                              # online SQLite backup + manifest
+./scripts/restore_drill.sh                       # restore into a temp dir and verify
 ```
+
+Backup/restore is a local drill, not disaster recovery: see [docs/OPERATIONS.md](docs/OPERATIONS.md). An export is
+not a backup.
 
 ## What to click
 
@@ -77,8 +89,18 @@ SIMULATED panel) → inspect diff and judgments → Approve → Publish → Hist
 7. Seeded examples on `Jobs`: succeeded, failed (scripted edit that does not apply), cancelled, interrupted (stale
    heartbeat), and a queued run for the worker. `Workshop` can queue research, proposals, review panels and test runs,
    and lets you duplicate/edit/version instructions, reviewer panels, runner/model, policy and limits.
-8. `Test cases` compares runs per case and candidate, with individual verdicts. Expected outcomes marked *simulated*
+8. `Search` finds published titles, bodies, claims and source titles. Open a revision permalink (`/article/<slug>/r/2/`)
+   to see its citation, revision ID, content hash and licence; open a claim link to resolve one claim occurrence.
+9. `Test cases` compares runs per case and candidate, with individual verdicts. Expected outcomes marked *simulated*
    are not human labels.
+
+## Write API contract
+
+Agent writes (`POST /api/v1/articles/<slug>/proposals/`, `/proposals/<uuid>/reviews/`, `/research/`) require
+`Idempotency-Key`. Proposal writes also require `If-Match` naming the current published revision id or content hash.
+The API returns `409 duplicate_in_flight`, `422 payload_mismatch`, `412 stale_base` with the current revision, or
+`428 precondition_required`; a completed duplicate replays the original response with `Idempotent-Replayed: true`.
+Reads return an `ETag` and honour `If-None-Match` with `304`. This does not add a publish endpoint.
 
 
 ## Bounded agent editorial cycle
@@ -193,6 +215,7 @@ is declared but **no endpoint enforces it**; there is no publication route.
 | GET | `/api/v1/articles/` | read |
 | GET | `/api/v1/articles/<slug>/` | read |
 | GET | `/api/v1/revisions/<uuid>/` | read |
+| GET | `/api/v1/claims/<uuid>/` | read |
 | GET | `/api/v1/proposals/<uuid>/` | read |
 | GET | `/api/v1/jobs/<uuid>/` | read |
 | GET | `/api/v1/snapshots/` | read |
@@ -201,7 +224,8 @@ is declared but **no endpoint enforces it**; there is no publication route.
 | POST | `/api/v1/proposals/<uuid>/reviews/` | review |
 
 Agent proposals are markdown-only and must cite a source that has a preserved snapshot, with a quote present in the raw
-snapshot. The API never accepts session/admin auth.
+snapshot. The API never accepts session/admin auth. Every POST requires `Idempotency-Key`; proposal POSTs also require
+`If-Match` with the current published revision id or content hash. See the contract above the click path.
 
 ### Low-risk policy
 

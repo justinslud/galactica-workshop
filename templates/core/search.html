@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}{% if q %}Search: {{ q }}{% else %}Search{% endif %}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Search</p>
+  <h1>Find a topic, claim or source</h1>
+  <p class="lede">Search covers published titles, openings, body text, claim text and source titles. Drafts and unpublished proposals are not indexed.</p>
+</header>
+
+<form method="get" action="{% url 'search' %}" class="search-form" role="search">
+  <label for="q">Search terms</label>
+  <div class="search-row">
+    <input id="q" name="q" type="search" value="{{ q }}" maxlength="200" placeholder="e.g. subvocal, quadratic funding, citation" autofocus>
+    <button class="btn btn-primary" type="submit">Search</button>
+  </div>
+</form>
+
+{% if q %}
+<section class="card">
+  <h2>{{ result_count }} result{{ result_count|pluralize }}{% if result_count %} for “{{ q }}”{% endif %}</h2>
+  {% if results %}
+  <ol class="search-results">
+    {% for result in results %}
+    <li>
+      <h3>{% if result.document.revision %}<a href="{% url 'article_revision' result.article.slug result.document.revision.number %}">{{ result.document.title }}</a>{% else %}<a href="{% url 'article' result.article.slug %}">{{ result.document.title }}</a>{% endif %}</h3>
+      <p class="meta-line">
+        {{ result.article.title }}
+        {% if result.document.revision %}· {{ result.document.revision.label }}{% endif %}
+        {% if result.reasons %}· matched in {{ result.reasons|join:", " }}{% endif %}
+      </p>
+      {% if result.snippet %}<p class="search-snippet">{{ result.snippet }}</p>{% endif %}
+      <p class="inline-actions">
+        <a class="btn btn-small" href="{% url 'article' result.article.slug %}">Read current article</a>
+        {% if result.document.revision %}<a class="btn btn-small btn-quiet" href="{% url 'article_revision' result.article.slug result.document.revision.number %}">This revision</a>{% endif %}
+      </p>
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <div class="empty-state">
+    <h2>No published article matched</h2>
+    <p>Try a broader term, check the topic index, or report a missing topic. Search does not include drafts or proposals.</p>
+    <p><a class="btn" href="{% url 'topics' %}">Browse topics</a></p>
+  </div>
+  {% endif %}
+</section>
+{% endif %}
+{% endblock %}

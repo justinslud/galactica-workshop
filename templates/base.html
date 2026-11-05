@@ -16,6 +16,7 @@
     <nav aria-label="Main">
       <a href="{% url 'dashboard' %}" class="{% if request.resolver_match.url_name == 'dashboard' %}active{% endif %}">Dashboard</a>
       <a href="{% url 'library' %}" class="{% if request.resolver_match.url_name == 'library' %}active{% endif %}">Library</a>
+      <a href="{% url 'search' %}" class="{% if request.resolver_match.url_name == 'search' %}active{% endif %}">Search</a>
       <a href="{% url 'topics' %}" class="{% if request.resolver_match.url_name == 'topics' or request.resolver_match.url_name == 'topic' %}active{% endif %}">Topics</a>
       {% if user.is_authenticated %}
       <a href="{% url 'watchlist' %}" class="{% if request.resolver_match.url_name == 'watchlist' %}active{% endif %}">Watchlist</a>

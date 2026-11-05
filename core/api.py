@@ -6,15 +6,16 @@ publication, regardless of scope.
 import json
 from functools import wraps
 
-from django.http import JsonResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404
+from django.urls import reverse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
 
-from . import configs, editorial, jobs
+from . import configs, editorial, idempotency, jobs, licensing
 from .agent_auth import AgentAuthError, authenticate
 from .blocks import ValidationError as BlockValidationError
-from .models import Agent, Article, Job, Proposal, Review, Revision, SourceSnapshot
+from .models import Agent, Article, Claim, Job, Proposal, PublicationEvent, Review, Revision, SourceSnapshot
 
 
 def _body(request):
@@ -39,14 +40,23 @@ def _source_payload(source):
         'id': str(source.id), 'title': source.title, 'url': source.url, 'kind': source.kind,
         'check_status': source.check_status, 'retrieval_note': source.retrieval_note,
         'publisher': source.publisher, 'retrieved_on': source.retrieved_on.isoformat() if source.retrieved_on else None,
+        'license': source.license, 'attribution': source.attribution,
         'snapshot': _snapshot_brief(snap) if snap else None,
     }
 
 
+def _revision_permalink(revision):
+    return reverse('article_revision', args=[revision.article.slug, revision.number])
+
+
 def revision_payload(revision):
+    permalink = _revision_permalink(revision)
     return {
         'id': str(revision.id), 'number': revision.number, 'state': revision.state,
         'title': revision.title, 'opening': revision.opening, 'summary': revision.summary,
+        'content_hash': revision.content_hash,
+        'permalink': permalink,
+        'citation': licensing.citation(revision.article, revision, permalink),
         'created_at': revision.created_at.isoformat(),
         'published_at': revision.published_at.isoformat() if revision.published_at else None,
         'blocks': [
@@ -64,10 +74,75 @@ def article_payload(article):
     return {
         'id': str(article.id), 'slug': article.slug, 'title': article.title, 'opening': article.opening,
         'topic': ({'slug': article.topic.slug, 'title': article.topic.title} if article.topic else None),
-        'provenance': article.provenance, 'updated_at': article.updated_at.isoformat(),
+        'provenance': article.provenance, 'license': licensing.license_info(article.license),
+        'attribution': article.attribution, 'permalink': reverse('article', args=[article.slug]),
+        'updated_at': article.updated_at.isoformat(),
         'published_revision': (revision_payload(article.published) if article.published else None),
         'revision_count': article.revisions.count(),
     }
+
+
+def _claim_valid_to(claim):
+    event = PublicationEvent.objects.filter(article_id=claim.revision.article_id, revision_id=claim.revision_id).first()
+    if event is None:
+        return None
+    later = PublicationEvent.objects.filter(
+        article_id=claim.revision.article_id, sequence__gt=event.sequence,
+    ).order_by('sequence').first()
+    return later.published_at.isoformat() if later else None
+
+
+def claim_payload(claim):
+    revision = claim.revision
+    article = revision.article
+    current = article.published
+    if current is None or revision.state not in ('published', 'superseded'):
+        resolution = 'unpublished'
+    elif current.pk == revision.pk:
+        resolution = 'current'
+    else:
+        resolution = 'superseded'
+    citations = []
+    for citation in claim.citations.select_related('source'):
+        citations.append({
+            'source': _source_payload(citation.source), 'supports': citation.supports, 'quote': citation.quote,
+            'stance': citation.stance, 'strength': citation.strength,
+        })
+    return {
+        'id': str(claim.pk), 'text': claim.text, 'support_status': claim.support_status,
+        'support_note': claim.support_note, 'block_id': str(claim.block_id), 'position': claim.position,
+        'permalink': reverse('claim', args=[claim.pk]),
+        'resolution': resolution, 'valid_to': _claim_valid_to(claim),
+        'article': {
+            'slug': article.slug, 'title': article.title,
+            'license': licensing.license_info(article.license), 'permalink': reverse('article', args=[article.slug]),
+        },
+        'revision': {
+            'id': str(revision.pk), 'number': revision.number, 'label': revision.label,
+            'state': revision.state, 'content_hash': revision.content_hash,
+            'permalink': _revision_permalink(revision),
+        },
+        'current_revision': (
+            {'id': str(current.pk), 'number': current.number, 'label': current.label,
+             'permalink': _revision_permalink(current)}
+            if current else None
+        ),
+        'citations': citations,
+        'note': (
+            'This claim id is bound to one revision in M0. It always resolves to that occurrence; '
+            'follow current_revision to see whether the article still says this.'
+        ),
+    }
+
+
+def _etag_json(request, payload, content_hash):
+    etag = f'"{content_hash}"' if content_hash else ''
+    if etag and request.headers.get('If-None-Match') == etag:
+        return HttpResponse(status=304, headers={'ETag': etag})
+    response = JsonResponse(payload)
+    if etag:
+        response['ETag'] = etag
+    return response
 
 
 def proposal_payload(proposal):
@@ -136,12 +211,23 @@ def article_detail(request, slug):
         {'id': str(p.id), 'status': p.status, 'origin': p.origin, 'is_stale': p.is_stale}
         for p in article.proposals.filter(status__in=['pending', 'approved', 'revision_requested'])
     ]
-    return JsonResponse(data)
+    return _etag_json(request, data, article.published.content_hash if article.published else '')
 
 
 @_api_view('read')
 def revision_detail(request, pk):
-    return JsonResponse(revision_payload(get_object_or_404(Revision, pk=pk)))
+    revision = get_object_or_404(Revision.objects.select_related('article'), pk=pk)
+    return _etag_json(request, revision_payload(revision), revision.content_hash)
+
+
+@_api_view('read')
+def claim_detail(request, pk):
+    claim = get_object_or_404(
+        Claim.objects.select_related('revision', 'revision__article', 'revision__article__published'), pk=pk,
+    )
+    if claim.revision.state not in ('published', 'superseded'):
+        raise Http404()
+    return _etag_json(request, claim_payload(claim), claim.revision.content_hash)
 
 
 @_api_view('read')
@@ -160,8 +246,45 @@ def snapshots(request):
     return JsonResponse({'snapshots': [_snapshot_brief(s) for s in qs]})
 
 
+def _idempotent_write(resource_type):
+    """Wrap a write view with key handling. Only successful responses are replayed."""
+    def decorate(view):
+        @wraps(view)
+        def wrapper(request, *args, **kwargs):
+            try:
+                record, replay = idempotency.begin(request, request.agent)
+            except idempotency.ApiProblem as exc:
+                return idempotency.problem(exc.status, exc.code, exc.detail, exc.headers)
+            if replay is not None:
+                return replay
+            try:
+                response = view(request, *args, **kwargs)
+            except idempotency.ApiProblem as exc:
+                idempotency.abandon(record)
+                return idempotency.problem(exc.status, exc.code, exc.detail, exc.headers)
+            except Exception:
+                idempotency.abandon(record)
+                raise
+            if 200 <= response.status_code < 300:
+                resource_id = ''
+                try:
+                    payload = json.loads(response.content or b'{}')
+                    resource_id = payload.get('proposal') or payload.get('job') or payload.get('review', {}).get('id') or ''
+                except (ValueError, AttributeError):
+                    pass
+                if not resource_id:
+                    resource_id = kwargs.get('pk') or kwargs.get('slug') or ''
+                idempotency.complete(record, response, resource_type=resource_type, resource_id=resource_id)
+            else:
+                idempotency.abandon(record)
+            return response
+        return wrapper
+    return decorate
+
+
 @_api_view('research')
 @require_http_methods(['POST'])
+@_idempotent_write('research_job')
 def start_research(request):
     body = _body(request)
     if body is None:
@@ -183,6 +306,7 @@ def start_research(request):
 
 @_api_view('review')
 @require_http_methods(['POST'])
+@_idempotent_write('review')
 def record_review_api(request, pk):
     proposal = get_object_or_404(Proposal, pk=pk)
     body = _body(request)
@@ -206,6 +330,7 @@ def record_review_api(request, pk):
 
 @_api_view('propose')
 @require_http_methods(['POST'])
+@_idempotent_write('proposal')
 def submit_proposal(request, slug):
     """Submit a markdown-only candidate with claim-level citations to preserved evidence."""
     import uuid
@@ -213,7 +338,8 @@ def submit_proposal(request, slug):
     from .blocks import validate_blocks
     from .models import Source
 
-    article = get_object_or_404(Article, slug=slug)
+    article = get_object_or_404(Article.objects.select_related('published'), slug=slug)
+    base = idempotency.check_if_match(request, article)
     body = _body(request)
     if body is None:
         return JsonResponse({'error': 'Body must be JSON.'}, status=400)
@@ -260,8 +386,14 @@ def submit_proposal(request, slug):
         proposal = editorial.open_proposal(
             candidate, rationale=str(body.get('rationale', '')), origin='agent', user=request.agent.operator,
             agent=request.agent, origin_model=str(body.get('model', ''))[:160],
+            expected_base_id=base.pk,
         )
     except (editorial.EditorialError, BlockValidationError) as exc:
         return JsonResponse({'error': ' '.join(getattr(exc, 'messages', [str(exc)]))}, status=409)
     return JsonResponse({'proposal': str(proposal.pk), 'status': proposal.status,
                          'candidate': proposal.candidate.label}, status=201)
+
+
+def claim_payload_response(request, claim):
+    """Shared by the token API and the public resolver's JSON representation."""
+    return _etag_json(request, claim_payload(claim), claim.revision.content_hash)

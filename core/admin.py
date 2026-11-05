@@ -2,7 +2,8 @@ from django.contrib import admin
 
 from .models import (
     Agent, AgentCredential, AgentRun, Article, AuditEvent, Block, Citation, ConfigVersion, ContributorProfile, EvalCase,
-    EvalResult, Job, JobEvent, Proposal, PublicationEvent, Review, Revision, Source, SourceSnapshot, Topic, Watch,
+    EvalResult, IdempotencyRecord, Job, JobEvent, Proposal, PublicationEvent, Review, Revision, SearchDocument, Source,
+    SourceSnapshot, Topic, Watch,
 )
 
 
@@ -39,8 +40,8 @@ class TopicAdmin(admin.ModelAdmin):
 
 @admin.register(Article)
 class ArticleAdmin(admin.ModelAdmin):
-    list_display = ('title', 'slug', 'topic', 'provenance', 'published', 'updated_at')
-    list_filter = ('provenance', 'topic')
+    list_display = ('title', 'slug', 'topic', 'provenance', 'license', 'published', 'updated_at')
+    list_filter = ('provenance', 'license', 'topic')
     search_fields = ('title', 'slug', 'opening')
     readonly_fields = ('published', 'created_at', 'updated_at')
 
@@ -51,7 +52,8 @@ class PublicationEventAdmin(ReadOnlyAdmin):
     list_filter = ('kind', 'article')
     search_fields = ('article__slug', 'reason', 'policy_version')
     readonly_fields = ('article', 'revision', 'sequence', 'kind', 'published_at', 'published_by',
-                       'previous_revision', 'policy_version', 'decision', 'reason', 'content_hash', 'created_at')
+                       'previous_revision', 'policy_version', 'decision', 'reason', 'content_hash', 'license',
+                       'created_at')
 
 
 @admin.register(Watch)
@@ -152,7 +154,7 @@ class AuditEventAdmin(ReadOnlyAdmin):
 
 @admin.register(Source)
 class SourceAdmin(admin.ModelAdmin):
-    list_display = ('title', 'kind', 'check_status', 'publisher', 'published_on', 'retrieved_on')
+    list_display = ('title', 'kind', 'check_status', 'publisher', 'license', 'published_on', 'retrieved_on')
     list_filter = ('kind', 'check_status')
     search_fields = ('title', 'url', 'authors', 'publisher')
 
@@ -181,3 +183,20 @@ class EvalCaseAdmin(admin.ModelAdmin):
 class EvalResultAdmin(ReadOnlyAdmin):
     list_display = ('case', 'candidate_label', 'outcome', 'expected', 'matches', 'job')
     list_filter = ('outcome', 'matches')
+
+
+@admin.register(SearchDocument)
+class SearchDocumentAdmin(ReadOnlyAdmin):
+    list_display = ('article', 'revision', 'title', 'updated_at')
+    search_fields = ('article__slug', 'title', 'body', 'claims', 'sources')
+    readonly_fields = ('article', 'revision', 'title', 'opening', 'body', 'claims', 'sources', 'content_hash',
+                       'updated_at')
+
+
+@admin.register(IdempotencyRecord)
+class IdempotencyRecordAdmin(ReadOnlyAdmin):
+    list_display = ('agent', 'key', 'method', 'path', 'state', 'status_code', 'created_at', 'expires_at')
+    list_filter = ('state', 'method')
+    search_fields = ('agent__name', 'key', 'path')
+    readonly_fields = ('agent', 'key', 'method', 'path', 'payload_hash', 'state', 'status_code', 'response_body',
+                       'resource_type', 'resource_id', 'created_at', 'completed_at', 'expires_at')

@@ -6,6 +6,9 @@ options, the cases, the measurements, the cost, the stopping rule, and what deci
 **Rule:** pre-register the question, options, cases, metrics, stopping rule and cost before running. Store the
 result with the spec. Do not call a re-execution "reproducible"; record model, seed and prompt hash (spec §8.6).
 **Priority:** P0 = needed before private alpha; P1 = before public beta; P2 = later.
+**Kit status (2026-11-05):** E1 and E4 have runnable pre-registration kits under `experiments/` — protocols,
+synthetic fixtures and stdlib analysis scripts with `--self-test`. **Neither has been run.** There are no human
+sessions, no correction injections and no results; do not cite the kits as evidence.
 
 | ID | Experiment | Priority | Decision it informs | Effort |
 |---|---|---|---|---|
@@ -51,6 +54,7 @@ evidence-open rate, "would you trust this to cite?"; qualitative think-aloud. Re
 
 **Stopping rule:** stop after 30 sessions if one condition is clearly better on the primary task and no
 condition has a safety problem. If no difference, keep the simpler page (A) and revisit after 100 readers.
+**Kit:** [`experiments/E1-reader-task/`](../experiments/E1-reader-task/) — **not run**; no participant data.
 
 **Would change:** if B/C is not better, drop the summary surface from launch and keep the lead + evidence drawer.
 If C improves evidence use without hurting clarity, keep the strip.
@@ -140,6 +144,8 @@ false-accept/false-reject rate, reporter satisfaction. Track queue age.
 
 **Stopping rule:** stop at 30 corrections or when the median triage time is stable. If the 2-day/14-day SLA is
 not achievable with one person, publish a longer SLA rather than miss it.
+**Kit:** [`experiments/E4-correction-triage/`](../experiments/E4-correction-triage/) — **not run**; the 30 cases
+are synthetic and the triage log is empty.
 
 **Would change:** if triage is >15 minutes per correction, add structured claim linking and canned responses
 before public beta; if legal/privacy cases exceed capacity, defer real-subject content.

@@ -1,5 +1,6 @@
 import hashlib
 import json
+import uuid
 import urllib.request
 from unittest import mock
 
@@ -334,10 +335,12 @@ class AgentApiTests(WorkshopTestCase):
         self.review_token, _ = agent_auth.create_credential(self.agent, ['review'])
         self.propose_token, _ = agent_auth.create_credential(self.agent, ['propose'])
 
-    def call(self, path, token=None, method='get', body=None):
-        headers = {}
+    def call(self, path, token=None, method='get', body=None, headers=None, idempotency_key=None):
+        headers = dict(headers or {})
         if token:
             headers['HTTP_AUTHORIZATION'] = f'Bearer {token}'
+        if method == 'post':
+            headers.setdefault('HTTP_IDEMPOTENCY_KEY', idempotency_key or uuid.uuid4().hex)
         return self.client.generic(method, path, data=json.dumps(body or {}) if method == 'post' else None,
                                    content_type='application/json', **headers)
 
@@ -401,8 +404,10 @@ class AgentApiTests(WorkshopTestCase):
                 'claims': [{'block_index': 0, 'text': 'The sky is blue during the day.', 'citations': [citation]}],
                 'rationale': 'Adds one sentence supported by the preserved snapshot.',
                 'model': 'declared/propose-model'}
+        self.article.refresh_from_db()
+        if_match = {'HTTP_IF_MATCH': self.article.published.content_hash}
         response = self.call(f'/api/v1/articles/{self.article.slug}/proposals/', self.propose_token,
-                             method='post', body=body)
+                             method='post', body=body, headers=if_match)
         self.assertEqual(response.status_code, 201, response.content)
         proposal = Proposal.objects.get(pk=response.json()['proposal'])
         self.assertEqual(proposal.origin, 'agent')
@@ -413,16 +418,16 @@ class AgentApiTests(WorkshopTestCase):
         bad = dict(body)
         bad['claims'] = [dict(body['claims'][0], citations=[dict(citation, quote='This sentence is not in the snapshot.')])]
         response = self.call(f'/api/v1/articles/{self.article.slug}/proposals/', self.propose_token,
-                             method='post', body=bad)
+                             method='post', body=bad, headers=if_match)
         self.assertEqual(response.status_code, 409)
         no_claims = dict(body); no_claims['claims'] = []
         response = self.call(f'/api/v1/articles/{self.article.slug}/proposals/', self.propose_token,
-                             method='post', body=no_claims)
+                             method='post', body=no_claims, headers=if_match)
         self.assertEqual(response.status_code, 400)
         image = dict(body)
         image['blocks'] = [{'kind': 'image', 'data': {'src': '/static/x.png', 'alt': 'a', 'credit': 'c'}}]
         response = self.call(f'/api/v1/articles/{self.article.slug}/proposals/', self.propose_token,
-                             method='post', body=image)
+                             method='post', body=image, headers=if_match)
         self.assertEqual(response.status_code, 400)
 
     def test_no_publish_endpoint_and_no_low_risk_scope_enforced(self):

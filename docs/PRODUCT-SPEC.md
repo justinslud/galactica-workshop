@@ -547,16 +547,16 @@ evidence packet hash, relationship to author), `created_at`.
 | Proposed object | Current model | Action |
 |---|---|---|
 | Topic | minimal `Topic` added at M0 (slug, title, scope statement, parent, disambiguation flag, creator); `Article.topic` FK; no scope/coverage checklist yet | **Partial at M0**; full scope/coverage, split/merge and disambiguation behaviour at M1; migrate remaining articles; keep article slugs/redirects |
-| Article | `Article` | `topic` FK added at M0; `language`, `byline[]`/`contributors[]` remain later (the public credit page is derived from revisions for now); no `reading_level` field |
+| Article | `Article` | `topic`, `license` (default CC BY-SA 4.0) and `attribution` added at M0; `language`, `byline[]`/`contributors[]` remain later (the public credit page is derived from revisions for now); no `reading_level` field |
 | Revision | `Revision` | Extend with `parent_revision`, `policy_version`, `as_of`, `merge_of` |
 | Block | `Block` | Extend kinds; add `analysis`; keep stable `block_id` |
 | Assertion | none | **Add at M4**; launch uses `claim_key` on `Claim` + change diff at M2 |
 | ClaimOccurrence | `Claim` | Rename/extend; add `claim_key` (M2) and `assertion` FK (M4); keep offsets/support status |
-| Source | `Source` | Extend with identifiers, license, origin key (system-derived) |
+| Source | `Source` | `license`/`attribution` added at M0; extend with identifiers and origin key (system-derived) |
 | SourceSnapshot | `SourceSnapshot` | Extend with archive URL, retention class |
 | SourceAssessment | none | **Add at M2** |
 | View / ViewRevision | none | **Add at M3**; manifest fields; derived artifacts only |
-| PublicationEvent | `PublicationEvent` added at M0; `Article.published` is now a cache pointer | **Added at M0**; append-only, per-article sequence, unique `(article, sequence)` and `(article, revision)` |
+| PublicationEvent | `PublicationEvent` added at M0; `Article.published` is now a cache pointer | **Added at M0**; append-only, per-article sequence, unique `(article, sequence)` and `(article, revision)`; `license` snapshot at publication |
 | Proposal | `Proposal` | Extend kinds, disclosures, risk class, base hash |
 | Review | `Review` | Added human `reviewer` attribution and `origin='human'` at 2026-11-05; still to extend: scope, independence metadata, review round |
 | Decision | embedded in `Proposal`/`AuditEvent` | **Add at M2** (or a typed audit event first) |
@@ -580,12 +580,18 @@ cascade-delete its publication history), the minimal `Topic` with `Article.topic
 migrations `0006`/`0007`/`0008` (`0007` backfilled 6 existing publication events on the local DB; `0008` sets the
 `PROTECT` FK), the reader surfaces `/topics/`, `/topics/<slug>/`, `/contributors/<username>/` (public credit page,
 no private data), `/watchlist/` (web-only digest, no email), the article-page byline/topic/provenance/watch block,
-and the history-page publication log. `manage.py check` and `makemigrations --check` are clean; the suite is 154
-tests (was 133; 21 new). **Still open — inside M0 or later; do not describe as done:** stable permalink / claim resolver,
-license/attribution fields, SQLite backup + restore drill, FTS5, `Idempotency-Key`/`If-Match` (M0 remainder);
-correction intake, review tiers, full `Topic` scope/coverage (M1); a designed public (anonymous) full-history page,
-email digest, `View`/`Assertion` objects (later). This status note describes code and tests only; nothing was
-deployed.
+and the history-page publication log.
+
+**M0 remainder (2026-11-05).** The rest of M0 is also implemented: `/article/<slug>/r/<n>/` revision permalinks with
+citation (revision id, content hash, licence, access date); a public `/claims/<uuid>/` claim resolver plus token
+JSON API, with `resolution` and `valid_to`; `Article.license`/`Article.attribution`, `Source.license`/`attribution`
+and a `PublicationEvent.license` snapshot; `SearchDocument` + external-content FTS5 triggers and `/search/` with
+`rebuild_search`/`check_search`; `scripts/backup.sh` + `scripts/restore_drill.sh` with a passed local drill; and
+`Idempotency-Key` on proposal/review/research writes plus `If-Match`/`428`/`412` on agent proposal writes. ETags
+and `304` cover API reads; errors use `application/problem+json`. The suite is **190 tests**. **Still open (M1+):**
+correction intake, review tiers, full `Topic` scope/coverage, a designed public (anonymous) full-history page,
+email digest, `View`/`Assertion` objects, and a `claim_key`/merge-alias map. The E1/E4 kits are protocols only; no
+human sessions have been run. This status note describes code and tests only; nothing was deployed.
 
 **Authorization and review queue (2026-11-05).** A first deterministic slice is implemented: `ContributorProfile`
 trust levels, `core/authorization.py` (capabilities, derived states, one `can()` evaluator, reason codes,
@@ -610,9 +616,9 @@ is useful on its own and no step requires the whole model. It is a proposal; the
 | **M3 — derived artifacts and language** (6–8 weeks) | `View` + manifest for translation/audio/chart/explainer; one translation pilot; reading-level view | Provenance for artifacts that need it; language pilot | M2, E5 results |
 | **M4 — later** | Full `Assertion` model; `Organization`; policy-lifecycle UI; autonomy shadow mode; maps/charts; public exports | Expansion | M3, licensing decision, measured capacity, a trigger (e.g., a claim corrected twice across revisions and a reader/agent asks what we used to say) |
 
-**M0 progress (2026-11-04):** the `PublicationEvent`, minimal `Topic`, byline/credit page and watchlist parts of
-M0 are implemented; the stable permalink + claim resolver, license/attribution fields, backup/restore drill, FTS5
-and `Idempotency-Key`/`If-Match` parts are not. See the status note in §3.13.
+**M0 progress (2026-11-05):** all M0 items are implemented — `PublicationEvent`, minimal `Topic`, byline/credit
+page, watchlist, stable permalink + claim resolver, license/attribution fields, backup/restore drill, FTS5 search
+and `Idempotency-Key`/`If-Match` on the write API. See §3.13. M1+ has not started; E1/E4 have kits but no results.
 
 **Rules for the ladder:** each step ships with a test and a rollback; no step depends on a later one; do not
 build M2/M3 objects before the M1 review flow is measured, or the project will have a rich schema and no
@@ -1617,6 +1623,7 @@ Use the hash as the ETag and content address; use the revision ID for review, de
 | Duplicate completed | 200 | — | Original response body |
 | Key reuse with different payload | 422 | `payload_mismatch` | Fingerprint mismatch |
 | Missing idempotency key | 400 | `idempotency_key_required` | Problem+json |
+| Missing `If-Match` on a proposal write | 428 | `precondition_required` | Current revision id/hash |
 | Rate limited | 429 | `rate_limited` | `Retry-After` |
 | Quota exhausted | 429 | `quota_exhausted` | Reset time + `Retry-After` |
 | Permission/scope missing | 403 | `forbidden` | Required scope |
@@ -1951,11 +1958,11 @@ their status after the 2026-11-04 decision updates and the M0 implementation pas
   limit on real living-person/company content is unchanged.
 - **D-37 Launch timing:** partly answered 2026-11-04 — private alpha with friends/advisors first, then a gated
   public beta; no public beta date. Readiness criteria still gate the transition.
-- **M0 implementation:** the first M0 slice is implemented 2026-11-04 (PublicationEvent, minimal Topic, Watch,
-  byline/credit page, watchlist, publication log; 154 tests at that point). The rest of M0 and all M1+ items remain
-  open — see §3.13.
+- **M0 implementation:** complete as of 2026-11-05 (PublicationEvent, minimal Topic, Watch, byline/credit page,
+  watchlist, publication log, revision permalinks + claim resolver, license/attribution fields, FTS5 search,
+  backup/restore drill and write-API idempotency; D-43; 190 tests). M1+ remains open — see §3.13.
 - **Authorization and review queue (2026-11-05):** `ContributorProfile`, `core/authorization.py`, human
-  `Review.reviewer`, `/review/` queue and human review form are implemented v1 (D-41/D-42; 171 tests now). Quotas
+  `Review.reviewer`, `/review/` queue and human review form are implemented v1 (D-41/D-42; 190 tests now). Quotas
   are starting parameters; no auto-assignment or automatic trust promotion.
 
 ---

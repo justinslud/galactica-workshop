@@ -1,9 +1,10 @@
 # CURRENT — Galactica Workshop
 
-**Updated:** 2026-11-05 (latest pass: authorization/state-machine/human-review-dashboard slice, implemented and
-verified; previous: M0 publication/topic/watch slice, then extended product specification, proposal)
-**Location:** `/home/justin/projects/galactica-workshop` (separate Django app; the TypeScript project at
-`/home/justin/projects/galactica` is untouched)
+**Updated:** 2026-11-05 (latest pass: M0 remainder — permalinks, claim resolver, license fields, FTS5 search,
+backup/restore drill, write-API idempotency — plus E1/E4 experiment kits; previous: authorization/state-machine/
+human-review-dashboard slice, M0 publication/topic/watch slice, then extended product specification, proposal)
+**Location:** `/home/vboxuser/projects/galactica-workshop` (separate Django app; the TypeScript project at
+`/home/vboxuser/projects/galactica` is untouched)
 
 ## Objective
 
@@ -11,7 +12,60 @@ Build the first usable local Galactica workshop: editable, versioned articles; p
 reviews; human publication, correction and revert; configurable runner/reviewer/policy versions; background jobs; and
 repeatable editorial test cases. Django + SQLite, localhost only, no Docker/Redis/SPA.
 
-## Latest pass — 2026-11-05: authorization, state machine and human review dashboard (implemented, verified)
+## Latest pass — 2026-11-05: M0 remainder and E1/E4 kits (implemented, verified)
+
+**Objective:** finish the M0 items that were explicitly not done — a citable revision permalink and claim resolver,
+license/attribution fields, a backup/restore drill, FTS5 search, and safe retries on the write API — then prepare the
+reader-task and correction-triage experiments. The publication policy, human publish gate and agent publish boundary
+are unchanged.
+
+**Implemented (workshop code):**
+- **Stable revision permalink:** `/article/<slug>/r/<n>/`, public for published/superseded revisions and 404 for
+  anonymous readers of drafts/proposals; canonical `<link>`; “Cite this revision” with revision id, content hash,
+  license, permalink and access date; the old `?rev=` view is kept for compatibility. Claim links resolve at
+  `/claims/<uuid>/` (HTML) and `/api/v1/claims/<uuid>/` (token JSON), with `resolution` (`current`/`superseded`/
+  `unpublished`), `valid_to`, citations/snapshots and a current-revision pointer. Claim ids are revision-bound in M0;
+  there is no merge/alias map or successor-claim id.
+- **License and attribution:** `Article.license` (default CC BY-SA 4.0) and `Article.attribution`; `Source.license`
+  and `Source.attribution`; `PublicationEvent.license` snapshots the licence in force at publication. A later
+  relicensing does not rewrite prior events. The article page, API payload, history log and citation show the
+  licence. This is a field implementation, not counsel approval of the licensing recommendation.
+- **FTS5 search:** `SearchDocument` (one row per published article) plus an external-content FTS5 table and
+  insert/update/delete triggers (migrations `0011`/`0012`); `unicode61 remove_diacritics 2`. `/search/` ranks with BM25,
+  shows match fields and a plain-text snippet, excludes unpublished content, and degrades to no results rather than
+  a 500 on malformed FTS input. Publishing/reverting refreshes the index in the same transaction. Commands:
+  `rebuild_search` and `check_search`.
+- **Backup/restore drill:** `scripts/backup.sh` uses the SQLite online backup API (no `sqlite3` CLI on this VM),
+  normalises the copy to a single rollback-journal file, checks integrity and writes a SHA-256/row-count manifest.
+  `scripts/restore_drill.sh` restores into a temp dir, opens it read-only and verifies checksum, integrity, tables and
+  counts. A fresh drill on 2026-11-05 passed with 8 tables and 1,335,296 bytes; it did not replace the live database.
+  See `docs/OPERATIONS.md`. Local-only, unscheduled, no off-host copy — not disaster recovery.
+- **Write API:** `IdempotencyRecord` scoped to agent+key; `Idempotency-Key` is required on proposal, review and
+  research writes. Completed duplicates replay the original response (`Idempotent-Replayed: true`); concurrent
+  duplicates return `409 duplicate_in_flight`; key reuse with a different body/method/path returns `422
+  payload_mismatch`; keys expire after 24 hours. Agent proposal writes require `If-Match` naming the current
+  published revision id or content hash; missing returns `428 precondition_required`, stale returns `412 stale_base`
+  with the current revision and ETag. Reads return `ETag` and support `If-None-Match` → `304`. Errors use
+  `application/problem+json` with a stable `code`. Web forms are not idempotent-wrapped.
+- **E1/E4 kits:** `experiments/E1-reader-task/` and `experiments/E4-correction-triage/` contain protocols, synthetic
+  case/response templates and stdlib analysis scripts with `--self-test`. No human sessions have been run; there
+  are no results, and the synthetic fixtures are labelled SYNTHETIC.
+
+**Verification:** `manage.py test core` → **190 tests pass** (171 before; 19 new in
+`core/tests/test_m0_remainder.py`); `manage.py check` clean; `makemigrations --check` clean; migrations `0010`–`0012`
+applied to the local DB. `check_search` reports 3 documents / 3 indexed / ok. Backup and restore drill both pass.
+No browser-level visual check was made; pages are test-client/HTML verified only.
+
+**Not implemented / limits:** no claim merge/alias/301 map, no `claim_key` across revisions (M2); search is
+single-language Unicode tokenisation, not multilingual/CJK-tested, and has no telemetry; no scheduled or off-host
+backup, and no live restore was executed; idempotency covers the JSON write API only, with no cached error
+responses; license fields await counsel; revision permalinks are stable only while the revision row is retained
+(deletion is protected, not guaranteed forever). E1/E4 have no evidence yet.
+
+**Next:** run E1 and E4 with real participants; then E2/E3 (excluding same-agent reviews) to calibrate quotas and
+reviewer value. Keep the human gate. Do not treat the E1/E4 kits as completed experiments.
+
+## Earlier pass — 2026-11-05: authorization, state machine and human review dashboard (implemented, verified)
 
 **Objective:** replace scattered `is_staff` checks with one deterministic evaluator for capabilities, editorial
 states, transitions, relationship guards and quotas, and give humans a single queue for what needs review — without
@@ -81,15 +135,14 @@ the project name.
 Migrations were applied to the local DB (gitignored). No browser-level check was made, so the new pages are
 verified through the Django test client and checks rather than observed in a browser.
 
-**Not implemented in this slice — do not read as done:** stable permalink/claim resolver, license/attribution
-fields, SQLite backup/restore drill, FTS5, `Idempotency-Key`/`If-Match` (M0 remainder); correction intake, review
-tiers, full `Topic` scope/coverage (M1); a designed public (anonymous) full-history page, email digest, and the
-`View`/`Assertion` objects (later). This is a partial M0, not a launch product; the editorial gate, review roles,
-quotas and API are unchanged. No rename, no deployment, no production data change, no credentials.
+**Not implemented in this slice:** the M0 remainder listed here was implemented in the 2026-11-05 pass above. Still
+open: correction intake, review tiers, full `Topic` scope/coverage (M1); a designed public (anonymous) full-history
+page, email digest, and the `View`/`Assertion` objects (later). The editorial gate, review roles, quotas and policy
+minimums are unchanged. No rename, no deployment, no production data change, no credentials.
 
-**Next:** finish the remaining M0 items (permalink + claim resolver, license fields, backup/restore drill, FTS5,
-idempotency), then run E1/E4 per the briefing. Do not start M1 review tiers or correction intake before the
-reader-task and correction-triage experiments.
+**Next at the time:** finish the remaining M0 items (done in the 2026-11-05 pass above), then run E1/E4 per the
+briefing. Do not start M1 review tiers or correction intake before the reader-task and correction-triage
+experiments.
 
 ## Earlier pass — 2026-11-04: extended product specification (proposal, no code change)
 
@@ -425,7 +478,7 @@ run isolated fact/citation/readability reviews, leave it pending. Not general pu
 ### Exact commands
 
 ```sh
-cd /home/justin/projects/galactica-workshop
+cd /home/vboxuser/projects/galactica-workshop
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo
 .venv/bin/python manage.py runserver 127.0.0.1:8001
@@ -527,14 +580,15 @@ curl -H "Authorization: Bearer $GALACTICA_AGENT_TOKEN" http://127.0.0.1:8001/api
 
 ## Running processes (this session)
 
-- Web: `.venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload` → **http://127.0.0.1:8001/**
-- Worker: `.venv/bin/python manage.py run_worker` (background; log `/tmp/opencode/galactica-worker.log`)
+- Web: PID 80326, `.venv/bin/python manage.py runserver 127.0.0.1:8001 --noreload` → **http://127.0.0.1:8001/**
+- Worker: PID 80327, `.venv/bin/python manage.py run_worker` (background; log `/tmp/opencode/galactica-worker.log`)
 - Logs: `/tmp/opencode/galactica-server.log`, `/tmp/opencode/galactica-worker.log`
+- Restart after a code change: `./scripts/local.sh restart` (the server uses `--noreload`).
 
 ## Exact commands
 
 ```sh
-cd /home/justin/projects/galactica-workshop
+cd /home/vboxuser/projects/galactica-workshop
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo
 .venv/bin/python manage.py runserver 127.0.0.1:8001
@@ -557,11 +611,11 @@ Logins: `admin` / `admin` (staff), `editor` / `editor` (non-staff). Local demo o
 
 ## Next actions
 
-1. Open http://127.0.0.1:8001/ and walk the cycle in `README.md` ("What to click").
-2. When free quota returns: `manage.py check_runner`, then run the `OpenCode, free model` runner from the Workshop and
-   verify measured usage appears on the job page.
-3. Decide whether the next increment is the agent JSON API (read articles/revisions, submit proposals, record reviews,
-   check statuses, scoped credentials) — specified but not implemented.
+1. Run E1 (`experiments/E1-reader-task/`) with 18–24 real readers and E4 (`experiments/E4-correction-triage/`) with
+   a human steward and 30 synthetic cases. Both kits are pre-registered; neither has results.
+2. Then run E2/E3 to calibrate review-at-creation, reviewer independence and quotas; exclude same-agent reviews from
+   independence claims.
+3. Keep the human publish gate. Do not add M1 correction intake or review tiers until E4/E2 supply evidence.
 4. Add human labels to test cases via admin once enough runs exist; the current expectations are simulated or unknown.
 
 ## Relevant files
@@ -576,7 +630,7 @@ Logins: `admin` / `admin` (staff), `editor` / `editor` (non-staff). Local demo o
 - `core/prompts.py`, `core/scenarios.py`, `core/demo_content.py`, `core/seeding.py`
 - `core/views.py`, `core/urls.py`, `core/admin.py`
 - `templates/`, `static/css/galactica.css`, `static/js/editor.js`, `static/js/workshop.js`
-- `core/tests/` — 77 automated checks
+- `core/tests/` — 190 automated checks
 - `README.md` — setup, URLs, click path, gaps
 
 ## Unresolved questions (not decisions)
@@ -588,6 +642,6 @@ Logins: `admin` / `admin` (staff), `editor` / `editor` (non-staff). Local demo o
 
 ## Proposals (not accepted)
 
-- Add the JSON API with scoped agent credentials next.
 - Add a small browser smoke check (Playwright) once available.
 - Add uploaded media instead of path/URL images if the workshop is used beyond local demos.
+- M2: `claim_key`, a claim-change diff and a merge/alias map for the claim resolver.

@@ -18,10 +18,10 @@ from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from . import authorization, blocks as block_rules
-from . import configs, editorial, jobs
+from . import configs, editorial, jobs, licensing, search
 from .markup import render_block, word_diff_html
 from .models import (
-    Agent, AgentRun, Article, AuditEvent, Block, ConfigVersion, EvalCase, EvalResult, Job, Proposal,
+    Agent, AgentRun, Article, AuditEvent, Block, Claim, ConfigVersion, EvalCase, EvalResult, Job, Proposal,
     Review, Revision, Source, SourceSnapshot, Topic, Watch,
 )
 from .editorial import EditorialError, PermissionDeniedError, ConflictError
@@ -74,6 +74,35 @@ def _published_blocks(revision):
          'claims': claims_by_block.get(str(block.block_id), [])}
         for block in revision.blocks.order_by('position')
     ]
+
+
+def _article_render_context(request, article, revision, *, draft=None, viewing_old=False):
+    """Shared context for the current article and a stable revision permalink."""
+    publication_event = None
+    byline_user = None
+    citation = None
+    permalink = reverse('article', args=[article.slug])
+    if revision is not None:
+        permalink = reverse('article_revision', args=[article.slug, revision.number])
+        if revision.state in ('published', 'superseded'):
+            publication_event = revision.publication_events.select_related('published_by').order_by('-sequence').first()
+            byline_user = revision.created_by
+            citation = licensing.citation(article, revision, request.build_absolute_uri(permalink))
+    open_proposals = []
+    if request.user.is_authenticated:
+        open_proposals = article.proposals.filter(
+            status__in=['pending', 'approved', 'revision_requested']
+        ).select_related('base')
+    is_watching = request.user.is_authenticated and Watch.objects.filter(
+        user=request.user, article=article).exists()
+    return {
+        'article': article, 'revision': revision, 'items': _published_blocks(revision),
+        'viewing_old': viewing_old, 'draft_banner': revision is not None and revision.state == 'draft',
+        'open_proposals': open_proposals, 'draft': draft, 'topic': article.topic,
+        'byline_user': byline_user, 'publication_event': publication_event, 'is_watching': is_watching,
+        'permalink': permalink, 'citation': citation,
+        'license': licensing.license_info(article.license),
+    }
 
 
 def _editor_payload(draft):
@@ -274,46 +303,71 @@ def article_detail(request, slug):
     show_draft = request.GET.get('draft') == '1' and request.user.is_authenticated
     revision = article.published
     viewing_old = False
-    draft = None
     if rev_number and rev_number.isdigit():
         revision = get_object_or_404(Revision, article=article, number=int(rev_number))
-        if revision.state == 'draft' or revision.state == 'proposed':
-            if not request.user.is_authenticated:
-                raise Http404()
+        if revision.state in ('draft', 'proposed') and not request.user.is_authenticated:
+            raise Http404()
         viewing_old = revision.pk != article.published_id
     if show_draft:
         draft = article.revisions.filter(state='draft').first()
         if draft is not None:
             revision = draft
-    is_watching = request.user.is_authenticated and Watch.objects.filter(
-        user=request.user, article=article).exists()
-    if revision is None and draft is None:
+    if revision is None:
         return render(request, 'core/article.html', {
-            'article': article, 'revision': None, 'items': [],
-            'open_proposals': [], 'viewing_old': False, 'draft': None,
-            'draft_banner': False, 'topic': article.topic, 'byline_user': None,
-            'publication_event': None, 'is_watching': is_watching,
+            'article': article, 'revision': None, 'items': [], 'open_proposals': [],
+            'viewing_old': False, 'draft': None, 'draft_banner': False, 'topic': article.topic,
+            'byline_user': None, 'publication_event': None, 'is_watching': (
+                request.user.is_authenticated and Watch.objects.filter(user=request.user, article=article).exists()
+            ), 'permalink': reverse('article', args=[article.slug]), 'citation': None,
+            'license': licensing.license_info(article.license),
         })
-    open_proposals = []
-    if request.user.is_authenticated:
-        open_proposals = article.proposals.filter(status__in=['pending', 'approved', 'revision_requested']).select_related('base')
-    publication_event = None
-    byline_user = None
-    if revision.state in ('published', 'superseded'):
-        publication_event = revision.publication_events.select_related('published_by').order_by('-sequence').first()
-        byline_user = revision.created_by
-    return render(request, 'core/article.html', {
-        'article': article,
-        'revision': revision,
-        'items': _published_blocks(revision),
-        'viewing_old': viewing_old,
-        'draft_banner': revision is not None and revision.state == 'draft',
-        'open_proposals': open_proposals,
-        'draft': draft,
-        'topic': article.topic,
-        'byline_user': byline_user,
-        'publication_event': publication_event,
-        'is_watching': is_watching,
+    # The query-string view is kept for compatibility; the canonical permalink is /r/<n>/.
+    context = _article_render_context(request, article, revision, viewing_old=viewing_old)
+    return render(request, 'core/article.html', context)
+
+
+def article_revision(request, slug, number):
+    """Stable, public permalink to one revision. Drafts and proposals stay login-only."""
+    article = get_object_or_404(Article.objects.select_related('published', 'topic'), slug=slug)
+    revision = get_object_or_404(Revision.objects.select_related('created_by'), article=article, number=number)
+    if revision.state in ('draft', 'proposed') and not request.user.is_authenticated:
+        raise Http404()
+    context = _article_render_context(
+        request, article, revision, viewing_old=revision.pk != article.published_id,
+        draft=revision if revision.state == 'draft' else None,
+    )
+    return render(request, 'core/article.html', context)
+
+
+def claim(request, pk):
+    """Public claim resolver. A claim id always resolves to the occurrence it names."""
+    claim_row = get_object_or_404(
+        Claim.objects.select_related('revision', 'revision__article', 'revision__article__published',
+                                     'revision__created_by'),
+        pk=pk,
+    )
+    if claim_row.revision.state not in ('published', 'superseded'):
+        raise Http404()
+    if request.GET.get('format') == 'json' or 'application/json' in request.headers.get('Accept', ''):
+        from . import api
+        return api.claim_payload_response(request, claim_row)
+    article = claim_row.revision.article
+    current = article.published
+    return render(request, 'core/claim.html', {
+        'claim': claim_row, 'revision': claim_row.revision, 'article': article,
+        'current_revision': current, 'is_current': current is not None and current.pk == claim_row.revision_id,
+        'citations': claim_row.citations.select_related('source').prefetch_related('source__snapshots'),
+        'license': licensing.license_info(article.license),
+        'permalink': request.build_absolute_uri(reverse('claim', args=[claim_row.pk])),
+    })
+
+
+def search_view(request):
+    query = (request.GET.get('q') or '').strip()
+    results = search.search(query) if query else []
+    return render(request, 'core/search.html', {
+        'q': query, 'results': results, 'result_count': len(results),
+        'index_report': None,
     })
 
 
@@ -432,6 +486,8 @@ class SourceForm(forms.Form):
                                      help_text='Only choose "opened" if you actually opened and checked the source.')
     retrieval_note = forms.CharField(required=False, widget=forms.Textarea(attrs={'rows': 2}),
                                      help_text='How and when this was checked.')
+    license = forms.CharField(max_length=80, required=False, help_text='License of the source itself, if known.')
+    attribution = forms.CharField(max_length=300, required=False, help_text='Required credit line, if any.')
 
 
 @login_required

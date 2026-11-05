@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% load static %}
 {% block title %}{{ article.title }}{% endblock %}
+{% block head %}{% if permalink %}<link rel="canonical" href="{{ permalink }}">{% endif %}{% endblock %}
 {% block body_class %}reading{% endblock %}
 {% block content_class %}reading{% endblock %}
 {% block content %}
@@ -53,7 +54,7 @@
 
 {% if revision %}
 <p class="meta-line">
-  {{ revision.label }} · {{ revision.get_state_display }}
+  <a href="{{ permalink }}">{{ revision.label }}</a> · {{ revision.get_state_display }}
   {% if revision.published_at %}· published {{ revision.published_at|date:"j M Y" }}{% endif %}
   {% if revision.summary %}· {{ revision.summary }}{% endif %}
 </p>
@@ -68,6 +69,30 @@
   {% if publication_event.reason %}{{ publication_event.reason }}{% endif %}
   <a href="{% url 'history' article.slug %}">Publication log</a>
 </p>
+{% endif %}
+{% if citation %}
+<details class="cite-box">
+  <summary>Cite this revision</summary>
+  <p class="citation-text">{{ citation.text }}</p>
+  <dl class="citation-fields">
+    <dt>Revision</dt><dd>{{ citation.revision }} · <code>{{ citation.revision_id }}</code></dd>
+    <dt>Content hash</dt><dd><code>{{ citation.content_hash }}</code></dd>
+    <dt>License</dt><dd>{% if citation.license_url %}<a href="{{ citation.license_url }}" rel="license noopener">{{ citation.license }}</a>{% else %}{{ citation.license }}{% endif %}</dd>
+    <dt>Permalink</dt><dd><a href="{{ permalink }}">{{ permalink }}</a></dd>
+  </dl>
+  <p class="help">The revision ID is the citation identity; the content hash identifies this exact content. A newer revision may have corrected it.</p>
+</details>
+{% endif %}
+{% if revision %}
+<footer class="license-line">
+  <p>
+    {% if article.attribution %}{{ article.attribution }} · {% endif %}
+    Text available under
+    {% if license.url %}<a href="{{ license.url }}" rel="license noopener">{{ license.short }}</a>{% else %}{{ license.short }}{% endif %}.
+    {% if revision.published_at %}Published {{ revision.published_at|date:"j M Y" }}.{% endif %}
+    <a href="{% url 'history' article.slug %}">History</a>.
+  </p>
+</footer>
 {% endif %}
 {% else %}
 <div class="empty-state">

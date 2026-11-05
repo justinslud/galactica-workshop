@@ -386,3 +386,27 @@ blockquote.quote { margin: 4px 0 0; padding-left: 10px; border-left: 2px solid v
 .human-review-form { margin-top: 16px; padding-top: 14px; border-top: 1px dashed var(--rule); }
 .human-review-form h3 { margin-top: 0; }
 .human-review-form textarea { width: 100%; }
+
+/* ----- M0 remainder: permalink, citation, license, claim resolver, search ----- */
+details.cite-box { max-width: var(--reading); margin: 18px 0 8px; padding: 10px 14px; border: 1px solid var(--rule); border-radius: 8px; font-size: 14px; }
+details.cite-box summary { cursor: pointer; font-weight: 700; color: var(--accent); }
+.citation-text { margin: 10px 0; overflow-wrap: anywhere; }
+.citation-fields, .claim-meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; font-size: 13px; margin: 8px 0; }
+.citation-fields dt, .claim-meta dt { color: var(--muted); font-weight: 700; }
+.citation-fields dd, .claim-meta dd { margin: 0; overflow-wrap: anywhere; }
+.license-line { max-width: var(--reading); margin: 22px 0 0; padding-top: 10px; border-top: 1px solid var(--rule); color: var(--muted); font-size: 13px; }
+.license-line a { font-weight: 700; }
+.claim-permalink { margin-left: auto; font-size: 12px; white-space: nowrap; }
+.claim-note { margin: 2px 0 0 0; color: var(--muted); font-size: 13px; }
+.claim-status-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+.claim-card .claim-text { font-size: 19px; line-height: 1.5; margin: 0 0 8px; }
+.search-form { max-width: var(--reading); margin: 0 0 18px; }
+.search-form label { display: block; font-weight: 700; margin-bottom: 6px; }
+.search-row { display: flex; gap: 8px; }
+.search-row input { flex: 1; min-width: 0; }
+.search-results { list-style: none; padding: 0; margin: 0; }
+.search-results > li { padding: 14px 0; border-top: 1px solid var(--rule); }
+.search-results > li:first-child { border-top: 0; }
+.search-results h3 { margin: 0 0 4px; }
+.search-snippet { margin: 6px 0; max-width: var(--reading); color: var(--muted); }
+.badge-superseded { border-color: var(--accent-2); color: var(--accent); background: var(--accent-soft); }

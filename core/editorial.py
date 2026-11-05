@@ -134,12 +134,17 @@ def _record_publication(article, revision, *, kind, user, previous, reason='', p
         revision.content_hash = digest
         revision.save(update_fields=['content_hash'])
     last = PublicationEvent.objects.filter(article=article).aggregate(Max('sequence'))['sequence__max'] or 0
-    return PublicationEvent.objects.create(
+    event = PublicationEvent.objects.create(
         article=article, revision=revision, sequence=last + 1, kind=kind,
         published_at=revision.published_at or timezone.now(), published_by=_actor(user), previous_revision=previous,
         policy_version=policy_version[:160], decision=decision[:40], reason=(reason or '')[:2000],
-        content_hash=digest,
+        content_hash=digest, license=article.license,
     )
+    # The search index is derived from the publication, not from the editor's draft, so it can
+    # never expose an unpublished revision. It is updated in the same transaction as the event.
+    from . import search
+    search.index_article(article)
+    return event
 
 
 def _write_content(revision, items, citations):
@@ -379,10 +384,13 @@ def save_draft(draft, user, *, title, opening, items, citations, expected_versio
 
 
 def open_proposal(revision, *, rationale, origin, user=None, eval_case=None, agent=None, agent_run=None,
-                  origin_job=None, origin_model=''):
-    """Turn a candidate revision into a proposal against the currently published revision."""
-    article = revision.article
-    article.refresh_from_db()
+                  origin_job=None, origin_model='', expected_base_id=None):
+    """Turn a candidate revision into a proposal against the currently published revision.
+
+    `expected_base_id` closes the check-then-act window for the write API: the caller names the
+    base it saw, and the article lock rechecks it before a proposal row is created.
+    """
+    article_id = revision.article_id
     rationale = (rationale or '').strip()
     if not 20 <= len(rationale) <= 2000:
         raise block_rules.ValidationError('Rationale must be 20 to 2000 characters, explaining why the change helps readers.')
@@ -390,12 +398,18 @@ def open_proposal(revision, *, rationale, origin, user=None, eval_case=None, age
         _authorize(None, 'propose', agent=agent)
     elif user is not None:
         _authorize(user, 'propose')
-    base = article.published
     if revision.state not in ('draft', 'proposed'):
         raise EditorialError('Only a draft or candidate can become a proposal.')
-    if base is not None and content_hash(revision) == content_hash(base):
-        raise block_rules.ValidationError(f'This draft has no changes from {base.label}. Edit something before proposing.')
     with transaction.atomic():
+        article = Article.objects.select_for_update().select_related('published').get(pk=article_id)
+        base = article.published
+        if expected_base_id is not None and str(base.pk if base else '') != str(expected_base_id):
+            raise StaleProposalError(
+                f'Refused: this proposal was written against a different base. '
+                f'The article is now at {base.label if base else "no published revision"}.'
+            )
+        if base is not None and content_hash(revision) == content_hash(base):
+            raise block_rules.ValidationError(f'This draft has no changes from {base.label}. Edit something before proposing.')
         revision.state = 'proposed'
         revision.content_hash = content_hash(revision)
         revision.published_at = None
@@ -682,7 +696,8 @@ def create_published_revision(article, user, *, items, citations, summary, title
     return revision
 
 
-def create_source(*, title, url='', kind='other', authors='', publisher='', published_on='', check_status='unchecked', retrieval_note='', user=None):
+def create_source(*, title, url='', kind='other', authors='', publisher='', published_on='', check_status='unchecked',
+                  retrieval_note='', license='', attribution='', user=None):
     require_login(user)
     title = (title or '').strip()
     if not title:
@@ -692,6 +707,7 @@ def create_source(*, title, url='', kind='other', authors='', publisher='', publ
     return Source.objects.create(
         title=title[:300], url=url, kind=kind, authors=authors[:300], publisher=publisher[:200],
         published_on=published_on[:60], check_status=check_status, retrieval_note=retrieval_note[:2000],
+        license=(license or '')[:80], attribution=(attribution or '')[:300],
     )
 
 

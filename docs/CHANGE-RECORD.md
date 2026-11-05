@@ -248,3 +248,66 @@ D-41 and D-42 are **accepted direction + implemented v1 (2026-11-05)**; their op
 promotion, `new` queue access, quota numbers, edited-but-not-authored decisions, withdrawal behavior) are listed in
 `docs/DECISION-REGISTER.md` under "Implementation update — 2026-11-05". D-19 and D-23 keep their existing
 statuses. OQ-2 is partly addressed by D-41; OQ-1 and OQ-3 are unchanged. No other decision status changed.
+
+---
+
+# Change record addendum — 2026-11-05 M0 remainder and E1/E4 kits
+
+**Scope:** complete the M0 items that the 2026-11-04 M0 pass explicitly left open, then prepare E1/E4. No M1+
+feature, no publication-policy change, no rename, no deployment, no credentials, no production data change.
+
+## Added
+
+| File | What it is |
+|---|---|
+| `core/licensing.py` | License table, default, citation strings. Not legal advice. |
+| `core/search.py` | `SearchDocument` build, published-only FTS5 search, match reasons, snippet, integrity report. |
+| `core/idempotency.py` | `Idempotency-Key` lifecycle, replay, `If-Match` check, `application/problem+json` errors. |
+| `core/migrations/0010_article_attribution_article_license_and_more.py` | Article/Source/PublicationEvent license fields; `SearchDocument`; `IdempotencyRecord`. |
+| `core/migrations/0011_search_fts_and_license_backfill.py` | FTS5 table/triggers, search backfill, publication licence backfill. |
+| `core/migrations/0012_backfill_content_hashes.py` | Backfill empty legacy `Revision`/`PublicationEvent`/`SearchDocument` content hashes. |
+| `core/management/commands/rebuild_search.py`, `check_search.py` | Rebuild and verify the derived index. |
+| `core/tests/test_m0_remainder.py` | 19 tests for permalinks, claim resolver, licenses, search, idempotency and preconditions. |
+| `templates/core/claim.html`, `templates/core/search.html` | Public claim resolver and search results. |
+| `scripts/backup.sh`, `scripts/restore_drill.sh` | Online SQLite backup + manifest; read-only restore drill. |
+| `docs/OPERATIONS.md` | Backup/restore runbook, drill record, RPO/RTO caveat, "an export is not a backup". |
+| `experiments/E1-reader-task/` | Protocol, synthetic sessions template, stdlib analysis with `--self-test`. |
+| `experiments/E4-correction-triage/` | Protocol, 30 synthetic cases, triage log, stdlib analysis with `--self-test`. |
+
+## Updated
+
+| File | Change |
+|---|---|
+| `core/models.py` | `Article.license`/`attribution`, `Source.license`/`attribution`, `PublicationEvent.license`, `SearchDocument`, `IdempotencyRecord`. |
+| `core/editorial.py` | Publication events snapshot the licence and refresh search; `open_proposal` accepts and rechecks `expected_base_id` under the article lock; source licence fields. |
+| `core/api.py` | Claim payload/resolver; licence/citation fields; ETag/304; idempotent write wrapper; `If-Match` on agent proposals; `problem+json` errors. |
+| `core/views.py` | Revision permalink, claim resolver, search page, shared article context, source form licence fields. |
+| `core/urls.py` | `/article/<slug>/r/<n>/`, `/claims/<uuid>/`, `/search/`, `/api/v1/claims/<uuid>/`. |
+| `templates/core/article.html`, `_article_body.html`, `history.html`, `base.html` | Canonical link, citation/licence block, claim links, search nav, revision permalinks, publication licence column. |
+| `static/css/galactica.css` | Citation, claim resolver and search styles. |
+| `core/admin.py` | Licence/search/idempotency admin visibility. |
+| `README.md` | M0 completion, new commands, write-API contract, experiment-kit pointer. |
+| `CURRENT.md` | New latest-pass section; previous passes preserved; stale absolute path corrected. |
+| `docs/00-CURRENT-STATE.md`, `docs/PRODUCT-SPEC.md`, `docs/DECISION-REGISTER.md`, `docs/BRIEFING.md`, `docs/README.md` | M0 status/test counts, D-43, limits, E1/E4 no-results note. |
+
+## Verification
+
+- `manage.py test core` → **190 tests pass** (171 before; 19 new). Expected logging test still prints a
+  `RuntimeError: secret detail` traceback; the suite is green.
+- `manage.py check` clean; `makemigrations --check` clean.
+- Migrations `0010`–`0012` applied locally; `check_search` reports 3 documents / 3 indexed / ok.
+- `scripts/backup.sh` and `scripts/restore_drill.sh` run on 2026-11-05: PASS, 8 tables, SHA-256
+  `6191b646…`, 1,335,296 bytes; the live DB was not opened by the drill and no live restore was executed.
+- No browser-level visual check; pages are Django test-client/HTML verified. The app was restarted after the
+  change so the running process serves the new code.
+
+## Explicitly not done
+
+- No claim merge/alias/301 map and no `claim_key` across revisions (M2); claim ids are revision-bound.
+- No multilingual/CJK search evaluation; FTS5 uses `unicode61`; no search telemetry.
+- No scheduled/off-host backup, retention, encryption or live restore; the drill verifies a copy only.
+- Idempotency covers the JSON write API only; web forms are not wrapped; error responses are not cached.
+- License fields are implementation only; the CC BY-SA recommendation still awaits counsel.
+- E1/E4 have protocols and synthetic fixtures only; **no human sessions were run and no result exists**.
+- No M1+ correction intake, review tiers, full topic scope/coverage, public full-history page, email digest,
+  `View`/`Assertion` objects, deployment, rename or production data change.

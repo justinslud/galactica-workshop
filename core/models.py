@@ -37,6 +37,18 @@ class Article(models.Model):
     opening = models.TextField(blank=True)
     topic = models.ForeignKey(Topic, null=True, blank=True, on_delete=models.PROTECT, related_name='articles')
     provenance = models.CharField(max_length=20, choices=PROVENANCE, default='workshop')
+    license = models.CharField(
+        max_length=40, default='CC-BY-SA-4.0',
+        choices=[
+            ('CC-BY-SA-4.0', 'CC BY-SA 4.0'), ('CC-BY-4.0', 'CC BY 4.0'), ('CC0-1.0', 'CC0 1.0'),
+            ('all-rights-reserved', 'All rights reserved'), ('other', 'Other'),
+        ],
+        help_text='License for the article text. Publication events record the license in force at publication.',
+    )
+    attribution = models.CharField(
+        max_length=300, blank=True,
+        help_text='Optional credit line shown with the license, e.g. an institution or funder.',
+    )
     published = models.ForeignKey(
         'Revision', null=True, blank=True, on_delete=models.PROTECT, related_name='+'
     )
@@ -119,6 +131,10 @@ class PublicationEvent(models.Model):
     decision = models.CharField(max_length=40, blank=True, help_text='approve/revert/direct; not a foreign key in M0.')
     reason = models.TextField(blank=True)
     content_hash = models.CharField(max_length=64, blank=True)
+    license = models.CharField(
+        max_length=40, blank=True,
+        help_text='License in force when this revision was published; a published copy is not relicensed.',
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -221,6 +237,11 @@ class Source(models.Model):
     retrieved_on = models.DateField(null=True, blank=True)
     check_status = models.CharField(max_length=20, choices=CHECK, default='unchecked')
     retrieval_note = models.TextField(blank=True)
+    license = models.CharField(
+        max_length=80, blank=True,
+        help_text='License of the source itself, if known. A snapshot is evidence, not a redistribution license.',
+    )
+    attribution = models.CharField(max_length=300, blank=True, help_text='Required credit line for this source, if any.')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -639,3 +660,65 @@ class AgentRun(models.Model):
 
     class Meta:
         ordering = ['started_at']
+
+
+class SearchDocument(models.Model):
+    """Materialised searchable text for one published article.
+
+    The FTS5 virtual table is an external-content index over this table (see migration 0011).
+    Keeping the aggregate in a real table makes triggers simple and lets `check_search` compare
+    the index with the source of truth.
+    """
+
+    id = models.BigAutoField(primary_key=True)
+    article = models.OneToOneField(Article, on_delete=models.CASCADE, related_name='search_document')
+    revision = models.ForeignKey(Revision, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    title = models.TextField(blank=True)
+    opening = models.TextField(blank=True)
+    body = models.TextField(blank=True)
+    claims = models.TextField(blank=True)
+    sources = models.TextField(blank=True)
+    content_hash = models.CharField(max_length=64, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['article__title']
+
+    def __str__(self):
+        return f'Search document: {self.article.slug}'
+
+
+class IdempotencyRecord(models.Model):
+    """One client-supplied Idempotency-Key for one agent and one operation.
+
+    `in_flight` is set before the work starts so a concurrent retry gets 409 rather than a
+    duplicate proposal. A crashed request leaves an in-flight row; it is treated as retryable
+    after `expires_at`, not silently replayed.
+    """
+
+    STATES = [('in_flight', 'In flight'), ('complete', 'Complete')]
+
+    id = models.BigAutoField(primary_key=True)
+    agent = models.ForeignKey(Agent, on_delete=models.CASCADE, related_name='idempotency_records')
+    key = models.CharField(max_length=200)
+    method = models.CharField(max_length=10)
+    path = models.CharField(max_length=500)
+    payload_hash = models.CharField(max_length=64)
+    state = models.CharField(max_length=16, choices=STATES, default='in_flight')
+    status_code = models.PositiveIntegerField(null=True, blank=True)
+    response_body = models.TextField(blank=True)
+    resource_type = models.CharField(max_length=40, blank=True)
+    resource_id = models.CharField(max_length=80, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    completed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ['-created_at']
+        constraints = [
+            models.UniqueConstraint(fields=['agent', 'key'], name='unique_idempotency_key_per_agent'),
+        ]
+        indexes = [models.Index(fields=['expires_at'], name='idem_expires_idx')]
+
+    def __str__(self):
+        return f'{self.agent.name}:{self.key[:12]} ({self.state})'

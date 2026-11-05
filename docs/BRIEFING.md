@@ -3,9 +3,9 @@
 **Date:** 2026-11-04. **Prepared by:** research and product lead.
 **Updated:** 2026-11-04 — your answers from the product review are recorded in
 [Decision updates — 2026-11-04](DECISION-REGISTER.md#decision-updates--2026-11-04) and summarised at the end of
-this briefing. **2026-11-05:** the authorization/state-machine and human review dashboard slice is implemented
-(171 tests); see the implementation update at the end and [the design
-note](AUTHORIZATION-STATE-MACHINE.md).
+this briefing. **2026-11-05:** the authorization/review-dashboard slice and then the M0 remainder (permalinks,
+claim resolver, license fields, FTS5 search, backup drill, write idempotency) are implemented; 190 tests. See the
+implementation updates at the end and [the design note](AUTHORIZATION-STATE-MACHINE.md).
 **What this is:** the short version. The full material is in [the spec](PRODUCT-SPEC.md), [decision
 register](DECISION-REGISTER.md), [worked examples](WORKED-EXAMPLES.md), [experiments](EXPERIMENTS.md),
 [launch plan](LAUNCH-PLAN.md), [current-state assessment](00-CURRENT-STATE.md) and [research notes](research/).
@@ -14,9 +14,10 @@ register](DECISION-REGISTER.md), [worked examples](WORKED-EXAMPLES.md), [experim
 
 ## The short version
 
-The project has a working editorial loop and a credible evidence model. It does **not** yet have the product
-surface that would make a reader choose it, the review capacity to accept agent-scale contribution, or the
-operational pieces (publication history, API idempotency, backups, licensing) that a public reference needs.
+The project has a working editorial loop, a credible evidence model, and first versions of the operational pieces
+(publication history, permalinks/claim resolver, API idempotency, a backup drill and license fields). It does **not**
+yet have the product surface that would make a reader choose it, the review capacity to accept agent-scale
+contribution, or measured correction/reader evidence.
 The biggest risk is not content generation. It is **review capacity and correction credibility**. The revised
 launch is deliberately narrower than the first draft: **5–8 anchor topics in one citation-costly wedge**, not
 12–20 showcase topics.
@@ -54,8 +55,9 @@ Two findings changed the architecture:
 - Permalink/reproduction limits, ETag/idempotency patterns, backup failure modes, licensing constraints (R3).
 - The existing app's immutable revisions, claim-level evidence, stale-base refusal, revert-as-new-revision and
   audit trail, plus the M0 append-only publication history, minimal topic pages, byline/credit page and watchlist,
-  and the 2026-11-05 authorization evaluator and human review queue (verified by 171 passing tests — 154 before
-  the authorization slice, 133 before M0 — and code reading).
+  the 2026-11-05 authorization evaluator and human review queue, and the M0 remainder (verified by 190 passing
+  tests — 171 before the remainder, 133 before M0 — and code reading). The E1/E4 kits are prepared but have no
+  human results.
 
 **Proposed (not decided, reversible):**
 - Article-first with stable assertions as support (D-02/D-05).
@@ -73,8 +75,9 @@ wedge and 5–8 anchor topics, and the public beta date. Licensing, the governan
 hypothetical seed subjects and the private-alpha → gated-public-beta order were answered on 2026-11-04 (see the
 [decision updates](DECISION-REGISTER.md#decision-updates--2026-11-04) below and in the register). The claim-ledger /
 claim-first design and authored-vs-generated views remain open questions, not decisions; deterministic authorization
-now has an implemented v1 (D-41) with quota calibration and trust-promotion rules still open, and the human review
-queue (D-42) has no auto-assignment.
+now has an implemented v1 (D-41) with quota calibration and trust-promotion rules still open, the human review
+queue (D-42) has no auto-assignment, and M0 is complete (D-43). E1 reader sessions and E4 correction triage have
+**not** been run; the kits contain no results.
 
 ## Important disagreements (preserved, not flattened)
 
@@ -99,11 +102,10 @@ queue (D-42) has no auto-assignment.
 
 ## What I recommend doing next
 
-1. **M0 slice — partly done (2026-11-04): `PublicationEvent`, a minimal `Topic`, the byline/credit page and the
-   opt-in watchlist are implemented and tested (154 tests, 21 new).** `PublicationEvent` is a correctness fix, not a
-   feature; the byline and watchlist are the return loop the research says matters. **Remaining M0 work is still
-   open:** stable permalink + claim resolver, license/attribution fields, SQLite backup + restore drill, FTS5,
-   `Idempotency-Key`/`If-Match`, and a designed public (anonymous) full-history page.
+1. **M0 is complete (2026-11-05):** `PublicationEvent`, minimal `Topic`, byline/credit page, watchlist, revision
+   permalinks + claim resolver, license/attribution fields, FTS5 search, a local backup/restore drill and
+   `Idempotency-Key`/`If-Match` on the write API are implemented and tested (190 tests; D-43). Still open: a designed
+   public (anonymous) full-history page, and all M1+ work.
 2. **Run E1 (reader task success) and E4 (correction triage)** in parallel (2–3 weeks). These decide the reader
    surface and the correction SLA before more building.
 3. **Run E2/E3 (review at creation; reviewer independence)** on the existing policy lab and live review runs.
@@ -225,12 +227,10 @@ A separate implementation pass landed **only the first M0 slice**:
 - migrations `0006`/`0007`/`0008` (`0007` backfilled 6 existing publication events on the local DB; `0008` makes
   the publication event→article FK `PROTECT`, so deleting an article cannot erase its history).
 
-154 tests pass (21 new, was 133); `manage.py check` and `makemigrations --check` are clean. The DB was migrated
-locally; nothing was deployed and no browser-level check was run. **Not implemented in this slice — do not read
-as done:** stable permalink / claim resolver, license/attribution fields, SQLite backup + restore drill, FTS5,
-`Idempotency-Key`/`If-Match` (M0 remainder); correction intake, review tiers, full `Topic` scope/coverage (M1);
-a designed public (anonymous) full-history page, email digest, `View`/`Assertion` objects (later). No M1+ item is
-complete.
+154 tests passed at the time (21 new, was 133); `manage.py check` and `makemigrations --check` were clean. The
+DB was migrated locally; nothing was deployed and no browser-level check was run. **The M0 remainder was
+implemented in the next pass** (below); correction intake, review tiers, full `Topic` scope/coverage (M1), a
+designed public full-history page, email digest and `View`/`Assertion` objects remain open. No M1+ item is complete.
 
 ### Implementation update — 2026-11-05: authorization, state machine and human review dashboard
 
@@ -253,6 +253,20 @@ machines, a trust-management UI beyond admin, per-reviewer calibration, and iden
 policy minimums (D-19) and identity direction (D-23) are unchanged; the trust levels are capability, not identity.
 D-41 and D-42 are recorded as accepted direction + implemented v1 with open calibration questions in the
 [decision register](DECISION-REGISTER.md#implementation-update--2026-11-05-authorization-state-machine-and-human-review-dashboard).
+
+### Implementation update — 2026-11-05: M0 remainder and E1/E4 kits
+
+A third slice completed M0 (D-43): public revision permalinks with citations; a revision-bound claim resolver
+(HTML + token JSON) with `resolution`/`valid_to`; `Article.license`/`attribution`, `Source.license`/`attribution`
+and a per-publication licence snapshot; `SearchDocument` + external-content FTS5 triggers with `/search/`,
+`rebuild_search` and `check_search`; `scripts/backup.sh` + `scripts/restore_drill.sh` (a fresh local drill passed,
+8 tables); and `Idempotency-Key` on proposal/review/research writes, `If-Match` on agent proposal writes, ETag/304
+reads and `application/problem+json` errors. The suite is **190 tests** (19 new).
+
+E1 and E4 kits are in `experiments/`: protocols, synthetic fixtures and stdlib analysis scripts with `--self-test`.
+**No human sessions have been run**, so there are no results and no product decision follows from them. Limits:
+no claim merge/alias map or `claim_key` (M2), search is single-language, backups are local/unscheduled, no live
+restore was executed, idempotency covers the JSON API not web forms, and license fields await counsel.
 
 ## What I would not do yet
 

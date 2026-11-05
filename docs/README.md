@@ -1,16 +1,18 @@
 # Product specification and planning documents
 
-**Status:** proposal for review (2026-11-04), updated 2026-11-05 with the authorization/state-machine and
-human-review-dashboard slice. Two slices are implemented: the partial M0 slice (2026-11-04) and the
-authorization/state-machine/human-review-dashboard slice (2026-11-05). This directory extends the existing
-specification; it does not replace the earlier decision record in `~/projects/galactica` or the workshop's
-`CURRENT.md`/`README.md`.
+**Status:** proposal for review (2026-11-04), updated 2026-11-05. Three slices are implemented: the first M0
+slice (2026-11-04), the authorization/state-machine/human-review-dashboard slice, and the M0 remainder
+(permalinks, claim resolver, license fields, FTS5 search, backup drill, write idempotency). This directory extends
+the existing specification; it does not replace the earlier decision record in `~/projects/galactica` or the
+workshop's `CURRENT.md`/`README.md`.
 **Working name:** Galactica. Candidate: T5 / t5.wiki. No rename is authorized.
-**Implementation:** `PublicationEvent`, a minimal `Topic`, the byline/credit page, the watchlist and the publication
-log (M0, 2026-11-04) plus the authorization evaluator, `ContributorProfile`, `Review.reviewer`, the `/review/`
-human queue and the human review form (2026-11-05) are implemented and tested (171 tests); see
-[`CURRENT.md`](../CURRENT.md), [the design note](AUTHORIZATION-STATE-MACHINE.md) and the appended
-[change record](CHANGE-RECORD.md). The rest of M0 and all M1+ items remain proposals.
+**Implementation:** M0 is implemented and tested (190 tests): `PublicationEvent`, minimal `Topic`, byline/credit
+page, watchlist, publication log; revision permalinks and a claim resolver; `Article.license`/`attribution`,
+`Source.license`/`attribution` and a per-publication licence snapshot; `SearchDocument` + FTS5 `/search/`; a local
+backup/restore drill; and `Idempotency-Key`/`If-Match` on the write API. The authorization evaluator,
+`ContributorProfile`, `Review.reviewer`, `/review/` queue and human review form are also implemented. See
+[`CURRENT.md`](../CURRENT.md), [the design note](AUTHORIZATION-STATE-MACHINE.md), [operations](OPERATIONS.md) and
+the appended [change record](CHANGE-RECORD.md). **All M1+ items remain proposals.**
 
 ## Read in this order
 
@@ -22,7 +24,7 @@ human queue and the human review form (2026-11-05) are implemented and tested (1
 4. [Authorization and editorial state machine](AUTHORIZATION-STATE-MACHINE.md) — the implemented capability table,
    derived proposal states, transition table, reason codes, quotas and the human review dashboard; a design note,
    not a constitution.
-5. [Decision register](DECISION-REGISTER.md) — 42 decisions with recommendation, status, authority route (A–E),
+5. [Decision register](DECISION-REGISTER.md) — 43 decisions with recommendation, status, authority route (A–E),
    evidence, tradeoffs, reversal/revisit trigger, and product-vs-governance domain.
 6. [Worked examples](WORKED-EXAMPLES.md) — cardboard, the invention of the telephone, a hypothetical company and
    living person; normal and unhappy paths; where the rules fail.
@@ -32,7 +34,10 @@ human queue and the human review form (2026-11-05) are implemented and tested (1
    reliable core, admission control, risks, decision points.
 9. [Critique response](CRITIQUE-RESPONSE.md) — the two independent critiques, what changed, what did not, and
    the dissent preserved.
-10. [Change record](CHANGE-RECORD.md) — what changed and where, what was preserved, what was not changed.
+10. [Operations](OPERATIONS.md) — backup, restore drill, restore procedure and the RPO/RTO caveat.
+11. [Change record](CHANGE-RECORD.md) — what changed and where, what was preserved, what was not changed.
+12. [E1 reader-task kit](../experiments/E1-reader-task/README.md) and [E4 correction-triage
+    kit](../experiments/E4-correction-triage/README.md) — protocols and analysis scripts; no human results.
 
 ## Critique
 
@@ -78,5 +83,6 @@ they are the difference between evidence and a product claim.
 - A final decision on the name, the specific seed wedge/anchor topics or public beta timing. Licensing and the
   governance-transition mechanism have dated answers in the register (subject to counsel / foundation deferred);
   real-vs-hypothetical seed subjects is settled in direction, not in subject list.
-- Measured catch rates, reader usability results, load tests, restore drills or accessibility audits. Those are
-  in the experiment backlog, not in the spec.
+- Measured catch rates, reader usability results, load tests, a live restore drill on real data, or accessibility
+  audits. Those are in the experiment backlog, not in the spec. The 2026-11-05 backup drill verified a restored
+  copy, not a live-database replacement; E1/E4 have kits but no sessions.

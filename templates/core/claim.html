@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Claim · {{ article.title }}{% endblock %}
+{% block content %}
+<header class="page-head">
+  <p class="eyebrow">Claim resolver · <a href="{% url 'article' article.slug %}">{{ article.title }}</a></p>
+  <h1>One claim, one permanent record</h1>
+  <p class="lede">This id resolves to one claim occurrence in one immutable revision. It does not silently re-point to a newer sentence; follow the current revision to see whether the article still says this.</p>
+</header>
+
+<section class="card claim-card">
+  <div class="claim-status-row">
+    <span class="badge badge-{{ claim.support_status }}">{{ claim.get_support_status_display }}</span>
+    {% if is_current %}<span class="badge badge-published">current revision</span>{% else %}<span class="badge badge-superseded">superseded</span>{% endif %}
+    <span class="badge badge-{{ revision.state }}">{{ revision.get_state_display }}</span>
+  </div>
+  <p class="claim-text">{{ claim.text }}</p>
+  {% if claim.support_note %}<p class="claim-note">{{ claim.support_note }}</p>{% endif %}
+
+  <dl class="claim-meta">
+    <dt>Revision</dt><dd><a href="{% url 'article_revision' article.slug revision.number %}">{{ revision.label }}</a> · <code>{{ revision.pk }}</code></dd>
+    <dt>Content hash</dt><dd><code>{{ revision.content_hash|default:"not recorded" }}</code></dd>
+    <dt>Article</dt><dd><a href="{% url 'article' article.slug %}">{{ article.title }}</a></dd>
+    {% if not is_current and current_revision %}
+    <dt>Current revision</dt><dd><a href="{% url 'article_revision' article.slug current_revision.number %}">{{ current_revision.label }}</a> is the published revision now.</dd>
+    {% endif %}
+    <dt>Claim id</dt><dd><code>{{ claim.pk }}</code></dd>
+    <dt>License</dt><dd>{% if license.url %}<a href="{{ license.url }}" rel="license noopener">{{ license.short }}</a>{% else %}{{ license.short }}{% endif %}</dd>
+  </dl>
+  <p class="inline-actions">
+    <a class="btn btn-small" href="?format=json">JSON representation</a>
+    <a class="btn btn-small btn-quiet" href="{% url 'article_revision' article.slug revision.number %}">Read this revision</a>
+  </p>
+</section>
+
+<section class="card">
+  <h2>Evidence attached to this claim</h2>
+  {% if citations %}
+  <ul class="claim-citations">
+    {% for c in citations %}
+    <li>
+      {% if c.source.url %}<a href="{{ c.source.url }}" rel="noopener noreferrer nofollow">{{ c.source.title }}</a>{% else %}<strong>{{ c.source.title }}</strong>{% endif %}
+      <span class="check">{{ c.source.get_check_status_display }}</span>
+      <span class="badge badge-{{ c.stance|lower }}">{{ c.get_stance_display }}</span>
+      <span class="muted small">{{ c.get_strength_display }}</span>
+      <p class="supports">{{ c.supports }}</p>
+      {% if c.quote %}<blockquote class="quote">{{ c.quote }}</blockquote>{% endif %}
+      {% for snap in c.source.snapshots.all %}{% if forloop.first %}
+      <p class="muted small">Snapshot {{ snap.fetched_at|date:"j M Y H:i" }} · <code>sha256 {{ snap.sha256 }}</code>{% if snap.final_url %} · <a href="{{ snap.final_url }}" rel="noopener noreferrer nofollow">retrieved copy</a>{% endif %}</p>
+      {% endif %}{% endfor %}
+      {% if c.source.license %}<p class="muted small">Source license: {{ c.source.license }}{% if c.source.attribution %} · {{ c.source.attribution }}{% endif %}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="field-error">No preserved citation is attached to this claim.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Cite this claim</h2>
+  <p class="citation-text">{{ article.title }} — “{{ claim.text }}” — {{ revision.label }} ({{ revision.content_hash|slice:":12" }}), {{ license.short }}. <a href="{{ permalink }}">{{ permalink }}</a></p>
+  <p class="help">A claim citation should name the revision and claim id. If the article changes, this record remains; the current revision link above shows the successor.</p>
+</section>
+{% endblock %}
