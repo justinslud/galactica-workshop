@@ -69,3 +69,7 @@ Open <http://127.0.0.1:8001/> and log in as `admin` / `admin` (staff) or `editor
 Tests: `.venv/bin/python manage.py test core`
 
 **More detail:** the click-through tour, API reference, agent-cycle commands, experiment results and known limits are in [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).
+
+## License
+
+[MIT](LICENSE)
