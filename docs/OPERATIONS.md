@@ -20,7 +20,7 @@ used). No secrets are stored in the scripts or the manifest.
 ## Backup
 
 ```bash
-cd /home/vboxuser/projects/galactica-workshop
+cd galactica-workshop
 ./scripts/backup.sh                 # backs up ./db.sqlite3
 ./scripts/backup.sh /path/to.sqlite3  # explicit source
 ```
@@ -56,7 +56,7 @@ against its own manifest, never against the live file.
 ## Restore drill
 
 ```bash
-cd /home/vboxuser/projects/galactica-workshop
+cd galactica-workshop
 ./scripts/restore_drill.sh                       # newest backup in runtime/backups
 ./scripts/restore_drill.sh runtime/backups/galactica-YYYYmmddTHHMMSSZ.sqlite3
 KEEP_DRILL=1 ./scripts/restore_drill.sh          # keep the temp dir for inspection

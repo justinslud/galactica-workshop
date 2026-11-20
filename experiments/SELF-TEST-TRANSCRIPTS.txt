@@ -5,7 +5,7 @@ ALL data in this file is SYNTHETIC (generated fixtures) or EMPTY templates.
 There are no real reader sessions, no real corrections and no empirical results.
 The --self-test outputs are code-path checks, not findings.
 
-Commands were run from the repository root: /home/vboxuser/projects/galactica-workshop
+Commands were run from the repository root: galactica-workshop
 
 ==============================================================================
 1. E1 — python3 analysis.py --self-test

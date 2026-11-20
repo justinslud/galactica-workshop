@@ -3,8 +3,8 @@
 **Updated:** 2026-11-05 (latest pass: M0 remainder — permalinks, claim resolver, license fields, FTS5 search,
 backup/restore drill, write-API idempotency — plus E1/E4 experiment kits; previous: authorization/state-machine/
 human-review-dashboard slice, M0 publication/topic/watch slice, then extended product specification, proposal)
-**Location:** `/home/vboxuser/projects/galactica-workshop` (separate Django app; the TypeScript project at
-`/home/vboxuser/projects/galactica` is untouched)
+**Location:** `galactica-workshop` (separate Django app; the TypeScript project at
+`../galactica` is untouched)
 
 ## Objective
 
@@ -478,7 +478,7 @@ run isolated fact/citation/readability reviews, leave it pending. Not general pu
 ### Exact commands
 
 ```sh
-cd /home/vboxuser/projects/galactica-workshop
+cd galactica-workshop
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo
 .venv/bin/python manage.py runserver 127.0.0.1:8001
@@ -588,7 +588,7 @@ curl -H "Authorization: Bearer $GALACTICA_AGENT_TOKEN" http://127.0.0.1:8001/api
 ## Exact commands
 
 ```sh
-cd /home/vboxuser/projects/galactica-workshop
+cd galactica-workshop
 .venv/bin/python manage.py migrate
 .venv/bin/python manage.py seed_demo
 .venv/bin/python manage.py runserver 127.0.0.1:8001

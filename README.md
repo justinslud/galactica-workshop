@@ -32,7 +32,7 @@ The local database, `.venv/`, `runtime/`, logs and generated static files are in
 ## Setup
 
 ```sh
-cd /home/vboxuser/projects/galactica-workshop
+cd galactica-workshop
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 .venv/bin/python manage.py migrate
